@@ -1,0 +1,119 @@
+[Onboarding]
+    |
+    v
+[Sign In / Sign Up]
+    |
+    v
+[Dashboard]
+  ├─ Total Balance (Savings - Expenses - Loans)
+  ├─ Monthly Income vs Expenses
+  ├─ Loan summary (Outstanding / Interest)
+  ├─ Charts (Savings growth, Expense breakdown, Loan payoff projection)
+  └─ Goals summary
+    |
+    v
+[Wallets / Accounts] <---> [Transactions Logs]
+    |
+    v
+[Expenses Tracking] <---> [Categories: Food, Bills, Transport…]
+    |
+    v
+[Loans Tracking] <---> [Loan schedules, Interest, Payment logs]
+    |
+    v
+[Savings Goals]
+    |
+    v
+[Export & Reports (Premium)]
+    |
+    v
+[Subscription / Settings]
+3️⃣ Database Schema Additions
+Expenses Table
+
+CREATE TABLE expenses (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id),
+    category TEXT NOT NULL,
+    amount NUMERIC(14,2) NOT NULL,
+    note TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+Loans Table
+
+CREATE TABLE loans (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id),
+    lender TEXT NOT NULL,
+    principal NUMERIC(14,2) NOT NULL,
+    interest_rate NUMERIC(5,2) NOT NULL,
+    term_months INT NOT NULL,
+    start_date DATE NOT NULL,
+    balance NUMERIC(14,2) NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE loan_payments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    loan_id UUID REFERENCES loans(id) ON DELETE CASCADE,
+    amount NUMERIC(14,2) NOT NULL,
+    payment_date DATE NOT NULL,
+    note TEXT
+);
+RLS Policies:
+Apply same pattern → user can only see their own expenses and loans.
+
+4️⃣ Interest & Loan Calculation Engine
+Loans (Amortized Payment Formula):
+
+𝑀
+=
+𝑃
+𝑟
+(
+1
++
+𝑟
+)
+𝑛
+(
+1
++
+𝑟
+)
+𝑛
+−
+1
+M=P 
+(1+r) 
+n
+ −1
+r(1+r) 
+n
+ 
+​
+ 
+Where:
+
+M = monthly payment
+
+P = principal
+
+r = monthly interest rate (annual / 12)
+
+n = total months
+
+Expenses / Savings Integration:
+
+Dashboard calculates:
+Net Balance = Total Savings - Total Expenses - Outstanding Loans
+
+Shows projections and goal impact if expenses or loans change.
+
+5️⃣ Updated Dashboard Design
+Widget	Purpose
+Total Savings	Sum of all wallets
+Expenses Breakdown	Pie chart by category
+Monthly Cash Flow	Income vs Expenses bar chart
+Loans	Outstanding balance, next due, payoff date
+Goals	Savings targets with adjusted projections considering expenses and loans

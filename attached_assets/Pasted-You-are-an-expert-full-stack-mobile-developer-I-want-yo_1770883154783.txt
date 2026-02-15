@@ -1,0 +1,59 @@
+You are an expert full-stack mobile developer. I want you to generate a complete **production-ready MVP** for a mobile app called **SaveWise – Smart Savings Tracker**.
+
+Requirements:
+
+1️⃣ **Mobile App**
+- React Native 
+- Offline-first support
+- Charts for growth projections (Victory Charts / FL Chart / Recharts)
+- Screens: Onboarding, Sign In/Sign Up (Google, Apple, Email), Dashboard, Wallet CRUD, Transaction Logs, Goals, Export (premium), Subscription modal
+- Real-time updates for wallet balance, transactions, and goal progress
+- Subscription unlock (Monthly / Lifetime)
+
+2️⃣ **Backend**
+- Supabase + PostgreSQL
+- Auth: Supabase Auth
+- Tables: wallets, savings_transactions, savings_goals, monthly_snapshots, subscriptions
+- Row-Level Security (users only see their data)
+- Realtime subscriptions on wallets, transactions, goals
+
+3️⃣ **Edge Functions**
+- Monthly Snapshot Generator (cron job)
+- Goal Progress Evaluator with push notification trigger
+
+4️⃣ **Interest Calculation Engine**
+- Compound interest: `A = P (1 + r/n)^(n*t)`
+- Monthly deposit forecast: `FV = P*(1+r)^t + PMT * [((1+r)^t - 1)/r]`
+
+5️⃣ **API Architecture**
+- REST endpoints: `/wallets`, `/wallets/:id`, `/wallets/:wallet_id/transactions`, `/transactions/:id`, `/goals`, `/goals/:id`, `/snapshots`, `/subscriptions`
+- Realtime updates via Supabase Realtime
+
+6️⃣ **Database Schema**
+- Include all SQL CREATE TABLE scripts for wallets, transactions, goals, snapshots, subscriptions
+- Include RLS policies
+- Use UUID PKs
+
+7️⃣ **Subscription Handling**
+- Flow for verifying Google Play / App Store purchases
+- Store active subscriptions in Supabase
+- Unlock premium features based on subscription check
+
+8️⃣ **UX Wireframe Flow**
+- Onboarding → Sign In → Dashboard → Wallet Management → Transactions → Goals → Export → Subscription → Settings
+- Highlight which screens are MVP (Phase 1)
+
+9️⃣ **Extras**
+- Clean architecture (MVC / MVVM)
+- Ready-to-use code snippets for Flutter / React Native services to call Supabase APIs
+- Include comments and TODOs for future phases
+
+⚡ **Output Format**
+- First: SQL schema scripts
+- Second: Supabase Edge Functions code
+- Third: Mobile app API service code
+- Fourth: Flutter / React Native screen scaffolds
+- Fifth: Subscription flow code
+- Sixth: UX wireframe flow (text diagram)
+
+Generate the **entire codebase in one go**, so I can copy-paste it into Replit and start building the SaveWise MVP immediately.
