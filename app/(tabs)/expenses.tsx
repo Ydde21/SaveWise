@@ -17,7 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
-import { useApp } from "@/lib/context";
+import { useActions, useExpenses, useIncomes, useNetwork, usePreferences, useRecurringExpenses } from "@/lib/context";
 import {
   buildExpenseCategoryBreakdown,
   buildIncomeSourceBreakdown,
@@ -78,12 +78,11 @@ type LedgerEntry = ExpenseLike | IncomeLike;
 export default function ExpensesScreen() {
   const insets = useSafeAreaInsets();
   const { width: screenWidth } = useWindowDimensions();
+  const expenses = useExpenses();
+  const recurringExpenses = useRecurringExpenses();
+  const incomes = useIncomes();
+  const { currencySymbol } = usePreferences();
   const {
-    expenses,
-    recurringExpenses,
-    incomes,
-    currencySymbol,
-    isOnline,
     addExpense,
     editExpense,
     removeExpense,
@@ -92,7 +91,8 @@ export default function ExpensesScreen() {
     addIncome,
     editIncome,
     removeIncome,
-  } = useApp();
+  } = useActions();
+  const { isOnline } = useNetwork();
   const [segment, setSegment] = useState<Segment>("expenses");
   const [formType, setFormType] = useState<Segment>("expenses");
   const [isModalVisible, setIsModalVisible] = useState(false);

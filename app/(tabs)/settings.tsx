@@ -15,7 +15,20 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import Colors from "@/constants/colors";
-import { useApp } from "@/lib/context";
+import {
+  useActions,
+  useAuth,
+  useExpenses,
+  useFinanceMetrics,
+  useGoals,
+  useIncomes,
+  useLoans,
+  useNetwork,
+  usePreferences,
+  useSubscriptionState,
+  useTransactions,
+  useWallets,
+} from "@/lib/context";
 import {
   getBillingUnavailableMessage,
   isBillingSupportedPlatform,
@@ -89,28 +102,26 @@ const SettingsMenuItem = React.memo(function SettingsMenuItem({
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
+  const { currency, currencySymbol } = usePreferences();
+  const wallets = useWallets();
+  const transactions = useTransactions();
+  const goals = useGoals();
+  const expenses = useExpenses();
+  const incomes = useIncomes();
+  const loans = useLoans();
+  const { subscriptions, isPremium } = useSubscriptionState();
+  const { freePlanStatus } = useFinanceMetrics();
+  const { isOnline } = useNetwork();
   const {
-    user,
-    currency,
-    currencySymbol,
     setCurrency,
-    wallets,
-    transactions,
-    goals,
-    expenses,
-    incomes,
-    loans,
-    subscriptions,
-    isPremium,
-    freePlanStatus,
-    isOnline,
     purchasePremium,
     restorePremium,
     refreshPremiumStatus,
     exportPremiumCsv,
     signOut,
     deleteAccount,
-  } = useApp();
+  } = useActions();
   const [showCurrency, setShowCurrency] = useState(false);
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [upgradeLoading, setUpgradeLoading] = useState<PremiumPlan | "restore" | null>(null);

@@ -16,7 +16,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import { captureError, initMonitoring } from "@/lib/monitoring";
 import { queryClient } from "@/lib/query-client";
-import { AppProvider, useApp } from "@/lib/context";
+import { AppProvider, useAuth } from "@/lib/context";
 
 initMonitoring();
 void SplashScreen.preventAutoHideAsync().catch((error) => {
@@ -27,7 +27,7 @@ void SplashScreen.preventAutoHideAsync().catch((error) => {
 });
 
 function AppNavigator() {
-  const { hasOnboarded, isLoading, isAuthenticated } = useApp();
+  const { hasOnboarded, isLoading, isAuthenticated } = useAuth();
   const router = useRouter();
   const segments = useSegments();
   const rootSegment = segments[0] ?? "";

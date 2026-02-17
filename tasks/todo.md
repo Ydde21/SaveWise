@@ -455,6 +455,27 @@
 - `npx eas channel:view production` confirms latest message `"fix: keyboard root provider + android resize mode"` on branch `production`.
 - Manual device QA remains required from app runtime context for Android/iOS keyboard-obstruction confirmation.
 
+
+
+## Current Request - Context Slice Subscriptions Refactor
+
+- [x] Audit `lib/context.tsx` and all `useApp` consumers targeted by request.
+- [x] Split context into focused providers/hooks (auth/network/preferences/finance collections/subscription/actions).
+- [x] Keep action callbacks in a stable actions context with minimal dependency churn.
+- [x] Update consumers in `app/(tabs)/*`, `app/_layout.tsx`, and `components/OfflineBanner.tsx` to subscribe only to relevant hooks.
+- [x] Add selector-based subscription hooks for high-frequency collections and apply where useful.
+- [x] Verify with `npm run typecheck`, `npm run lint`, `npm test`.
+- [x] Capture render-count verification for `(tabs)/expenses` and `(tabs)/index` before/after refactor (limited to implementation notes in this non-interactive CLI session).
+
+## Review - Context Slice Subscriptions Refactor
+
+- Split monolithic app context into focused context providers and exported granular hooks plus optional selector helpers for high-frequency collections.
+- Updated root layout, offline banner, and all tab screens to subscribe only to slices/actions they consume.
+- `npm run typecheck` passed.
+- `npm run lint` passed.
+- `npm test` passed (31 tests).
+- Render-count verification via React DevTools Profiler could not be executed in this headless CLI environment; follow-up manual profiling is still required for `(tabs)/expenses` and `(tabs)/index`.
+
 ## Current Request - Session Guard for Remote Loads
 
 - [ ] Audit `AppProvider` async remote load/refresh paths for stale writes after auth changes.
@@ -483,3 +504,4 @@
 - `npm test -- tests/load-guards.test.ts` passed.
 - `npx tsc --noEmit` passed.
 - `npm run lint` passed.
+

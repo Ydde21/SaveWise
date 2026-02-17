@@ -17,3 +17,4 @@
 - For card headers that mix long titles and action pills, never reuse generic row styles blindly; add responsive header styles with `flexShrink` for title text and fixed CTA sizing to prevent overflow on narrow screens.
 - For keyboard-related form fixes, never mark complete from code review alone; validate on Android device/emulator and ensure every `TextInput` form uses the shared keyboard-aware scroll wrapper with explicit offsets before publishing OTA.
 - When using `react-native-keyboard-controller` keyboard-aware forms, always verify root-level `KeyboardProvider` is present and set `android.softwareKeyboardLayoutMode` explicitly, otherwise form-level wrappers can silently degrade on Android.
+- When editing files in this environment, prefer the dedicated patch/edit workflow and avoid routing `apply_patch` through generic shell execution to prevent tooling warnings.

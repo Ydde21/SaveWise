@@ -16,15 +16,18 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
-import { useApp } from "@/lib/context";
+import { useActions, useGoals, useNetwork, usePreferences, useWallets } from "@/lib/context";
 import { formatFullCurrency } from "@/lib/interest";
 import { WALLET_COLORS, GOAL_ICONS } from "@/lib/storage";
 import Colors from "@/constants/colors";
 
 export default function GoalsScreen() {
   const insets = useSafeAreaInsets();
-  const { goals, wallets, currencySymbol, addGoal, editGoal, removeGoal, isOnline } =
-    useApp();
+  const goals = useGoals();
+  const wallets = useWallets();
+  const { currencySymbol } = usePreferences();
+  const { addGoal, editGoal, removeGoal } = useActions();
+  const { isOnline } = useNetwork();
   const [showCreate, setShowCreate] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);

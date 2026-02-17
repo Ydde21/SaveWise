@@ -17,7 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import Colors from "@/constants/colors";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
-import { useApp } from "@/lib/context";
+import { useActions, useLoanPayments, useLoans, useNetwork, usePreferences } from "@/lib/context";
 import {
   calculateMonthlyPayment,
   calculateTotalLoanInterest,
@@ -28,17 +28,17 @@ const LOAN_COLORS = ["#EF4444", "#F97316", "#3B82F6", "#8B5CF6", "#14B8A6"];
 
 export default function LoansScreen() {
   const insets = useSafeAreaInsets();
+  const loans = useLoans();
+  const loanPayments = useLoanPayments();
+  const { currencySymbol } = usePreferences();
   const {
-    loans,
-    loanPayments,
-    currencySymbol,
-    isOnline,
     addLoan,
     editLoan,
     removeLoan,
     addLoanPayment,
     removeLoanPayment,
-  } = useApp();
+  } = useActions();
+  const { isOnline } = useNetwork();
   const [showLoanModal, setShowLoanModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [editingLoanId, setEditingLoanId] = useState<string | null>(null);

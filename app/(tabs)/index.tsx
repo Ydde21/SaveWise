@@ -12,7 +12,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
-import { useApp } from "@/lib/context";
+import { useExpenses, useFinanceMetrics, useGoals, useLoanPayments, useLoans, usePreferences, useWallets } from "@/lib/context";
 import {
   calculateMonthlyPayment,
   formatFullCurrency,
@@ -38,15 +38,13 @@ function formatCategoryLabel(categoryKey: string): string {
 export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const {
-    wallets,
-    loans,
-    loanPayments,
-    goals,
-    expenses,
-    dashboardSummary,
-    currencySymbol,
-  } = useApp();
+  const wallets = useWallets();
+  const loans = useLoans();
+  const loanPayments = useLoanPayments();
+  const goals = useGoals();
+  const expenses = useExpenses();
+  const { dashboardSummary } = useFinanceMetrics();
+  const { currencySymbol } = usePreferences();
   const webTopInset = Platform.OS === "web" ? 67 : 0;
 
   const savingsProjection = useMemo(() => {
