@@ -456,6 +456,7 @@
 - Manual device QA remains required from app runtime context for Android/iOS keyboard-obstruction confirmation.
 
 
+
 ## Current Request - Context Slice Subscriptions Refactor
 
 - [x] Audit `lib/context.tsx` and all `useApp` consumers targeted by request.
@@ -474,3 +475,33 @@
 - `npm run lint` passed.
 - `npm test` passed (31 tests).
 - Render-count verification via React DevTools Profiler could not be executed in this headless CLI environment; follow-up manual profiling is still required for `(tabs)/expenses` and `(tabs)/index`.
+
+## Current Request - Session Guard for Remote Loads
+
+- [ ] Audit `AppProvider` async remote load/refresh paths for stale writes after auth changes.
+- [ ] Add request-version/user-id guards to prevent outdated async results from calling `setState`.
+- [ ] Apply the same guard in realtime-triggered refresh flow (`scheduleTableRefresh` -> `refreshTable`).
+- [ ] Add regression tests for rapid sign-out/sign-in transitions.
+- [ ] Verify with focused tests and static checks.
+
+## Current Request Review (Pending)
+
+- [ ] Confirm stale old-user responses are ignored after session change.
+- [ ] Confirm realtime refreshes cannot repopulate state post-logout.
+
+## Current Request - Session Guard for Remote Loads (Completed)
+
+- [x] Audit `AppProvider` async remote load/refresh paths for stale writes after auth changes.
+- [x] Add request-version/user-id guards to prevent outdated async results from calling `setState`.
+- [x] Apply the same guard in realtime-triggered refresh flow (`scheduleTableRefresh` -> `refreshTable`).
+- [x] Add regression tests for rapid sign-out/sign-in transitions.
+- [x] Verify with focused tests and static checks.
+
+## Current Request Review
+
+- [x] Confirm stale old-user responses are ignored after session change.
+- [x] Confirm realtime refreshes cannot repopulate state post-logout.
+- `npm test -- tests/load-guards.test.ts` passed.
+- `npx tsc --noEmit` passed.
+- `npm run lint` passed.
+

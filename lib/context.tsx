@@ -67,6 +67,7 @@ import type {
   Transaction,
   Wallet,
 } from "@/lib/types";
+import { beginLoadGuard, isLoadGuardActive } from "@/lib/load-guards";
 
 interface AppContextValue {
   session: Session | null;
@@ -299,6 +300,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   >({});
   const isRefreshingRef = useRef(false);
   const queuedRefreshRef = useRef(false);
+  const activeLoadIdRef = useRef(0);
+  const userIdRef = useRef<string | null>(null);
+
+  userIdRef.current = user?.id ?? null;
 
   const clearRemoteData = useCallback(() => {
     setWallets((prev) => (prev.length > 0 ? [] : prev));
@@ -333,10 +338,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const loadRemoteData = useCallback(async () => {
-    if (!user) {
+    const userIdAtStart = userIdRef.current;
+    if (!userIdAtStart) {
       clearRemoteData();
       return;
     }
+
+    const guard = beginLoadGuard(activeLoadIdRef, userIdAtStart);
 
     const [
       walletsData,
@@ -358,6 +366,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       subscriptionRepository.list({ limit: 100 }),
     ]);
 
+    if (!isLoadGuardActive(activeLoadIdRef, userIdRef.current, guard)) {
+      return;
+    }
+
     setWallets((prev) =>
       areEntityListsEqual(prev, walletsData) ? prev : walletsData
     );
@@ -378,45 +390,77 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setSubscriptions((prev) =>
       areEntityListsEqual(prev, subscriptionsData) ? prev : subscriptionsData
     );
-  }, [clearRemoteData, user]);
+  }, [clearRemoteData]);
 
-  const refreshWallets = useCallback(async () => {
+  const refreshWallets = useCallback(async (expectedUserId?: string) => {
+    const userIdAtStart = expectedUserId ?? userIdRef.current;
+    if (!userIdAtStart) return;
+    const guard = beginLoadGuard(activeLoadIdRef, userIdAtStart);
     const data = await walletRepository.list({ limit: 200 });
+    if (!isLoadGuardActive(activeLoadIdRef, userIdRef.current, guard)) return;
     setWallets((prev) => (areEntityListsEqual(prev, data) ? prev : data));
   }, []);
 
-  const refreshTransactions = useCallback(async () => {
+  const refreshTransactions = useCallback(async (expectedUserId?: string) => {
+    const userIdAtStart = expectedUserId ?? userIdRef.current;
+    if (!userIdAtStart) return;
+    const guard = beginLoadGuard(activeLoadIdRef, userIdAtStart);
     const data = await transactionRepository.list({ limit: 400 });
+    if (!isLoadGuardActive(activeLoadIdRef, userIdRef.current, guard)) return;
     setTransactions((prev) => (areEntityListsEqual(prev, data) ? prev : data));
   }, []);
 
-  const refreshGoals = useCallback(async () => {
+  const refreshGoals = useCallback(async (expectedUserId?: string) => {
+    const userIdAtStart = expectedUserId ?? userIdRef.current;
+    if (!userIdAtStart) return;
+    const guard = beginLoadGuard(activeLoadIdRef, userIdAtStart);
     const data = await goalRepository.list({ limit: 200 });
+    if (!isLoadGuardActive(activeLoadIdRef, userIdRef.current, guard)) return;
     setGoals((prev) => (areEntityListsEqual(prev, data) ? prev : data));
   }, []);
 
-  const refreshExpenses = useCallback(async () => {
+  const refreshExpenses = useCallback(async (expectedUserId?: string) => {
+    const userIdAtStart = expectedUserId ?? userIdRef.current;
+    if (!userIdAtStart) return;
+    const guard = beginLoadGuard(activeLoadIdRef, userIdAtStart);
     const data = await expenseRepository.list({ limit: 500 });
+    if (!isLoadGuardActive(activeLoadIdRef, userIdRef.current, guard)) return;
     setExpenseEntries((prev) => (areEntityListsEqual(prev, data) ? prev : data));
   }, []);
 
-  const refreshIncomes = useCallback(async () => {
+  const refreshIncomes = useCallback(async (expectedUserId?: string) => {
+    const userIdAtStart = expectedUserId ?? userIdRef.current;
+    if (!userIdAtStart) return;
+    const guard = beginLoadGuard(activeLoadIdRef, userIdAtStart);
     const data = await incomeRepository.list({ limit: 500 });
+    if (!isLoadGuardActive(activeLoadIdRef, userIdRef.current, guard)) return;
     setIncomes((prev) => (areEntityListsEqual(prev, data) ? prev : data));
   }, []);
 
-  const refreshLoans = useCallback(async () => {
+  const refreshLoans = useCallback(async (expectedUserId?: string) => {
+    const userIdAtStart = expectedUserId ?? userIdRef.current;
+    if (!userIdAtStart) return;
+    const guard = beginLoadGuard(activeLoadIdRef, userIdAtStart);
     const data = await loanRepository.list({ limit: 200 });
+    if (!isLoadGuardActive(activeLoadIdRef, userIdRef.current, guard)) return;
     setLoans((prev) => (areEntityListsEqual(prev, data) ? prev : data));
   }, []);
 
-  const refreshLoanPayments = useCallback(async () => {
+  const refreshLoanPayments = useCallback(async (expectedUserId?: string) => {
+    const userIdAtStart = expectedUserId ?? userIdRef.current;
+    if (!userIdAtStart) return;
+    const guard = beginLoadGuard(activeLoadIdRef, userIdAtStart);
     const data = await loanPaymentRepository.list({ limit: 500 });
+    if (!isLoadGuardActive(activeLoadIdRef, userIdRef.current, guard)) return;
     setLoanPayments((prev) => (areEntityListsEqual(prev, data) ? prev : data));
   }, []);
 
-  const refreshSubscriptions = useCallback(async () => {
+  const refreshSubscriptions = useCallback(async (expectedUserId?: string) => {
+    const userIdAtStart = expectedUserId ?? userIdRef.current;
+    if (!userIdAtStart) return;
+    const guard = beginLoadGuard(activeLoadIdRef, userIdAtStart);
     const data = await subscriptionRepository.list({ limit: 100 });
+    if (!isLoadGuardActive(activeLoadIdRef, userIdRef.current, guard)) return;
     setSubscriptions((prev) => (areEntityListsEqual(prev, data) ? prev : data));
   }, []);
 
@@ -452,32 +496,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
         | "incomes"
         | "loans"
         | "loanPayments"
-        | "subscriptions"
+        | "subscriptions",
+      expectedUserId?: string
     ) => {
       switch (table) {
         case "wallets":
-          await refreshWallets();
+          await refreshWallets(expectedUserId);
           break;
         case "transactions":
-          await refreshTransactions();
+          await refreshTransactions(expectedUserId);
           break;
         case "goals":
-          await refreshGoals();
+          await refreshGoals(expectedUserId);
           break;
         case "expenses":
-          await refreshExpenses();
+          await refreshExpenses(expectedUserId);
           break;
         case "incomes":
-          await refreshIncomes();
+          await refreshIncomes(expectedUserId);
           break;
         case "loans":
-          await refreshLoans();
+          await refreshLoans(expectedUserId);
           break;
         case "loanPayments":
-          await refreshLoanPayments();
+          await refreshLoanPayments(expectedUserId);
           break;
         case "subscriptions":
-          await refreshSubscriptions();
+          await refreshSubscriptions(expectedUserId);
           break;
       }
     },
@@ -503,7 +548,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         | "incomes"
         | "loans"
         | "loanPayments"
-        | "subscriptions"
+        | "subscriptions",
+      expectedUserId?: string
     ) => {
       const timers = tableRefreshTimersRef.current;
       const existing = timers[table];
@@ -513,7 +559,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       timers[table] = setTimeout(() => {
         delete timers[table];
-        void refreshTable(table);
+        void refreshTable(table, expectedUserId);
       }, 150);
     },
     [refreshTable]
@@ -615,7 +661,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         "postgres_changes",
         { event: "*", schema: "public", table: "wallets", filter: `user_id=eq.${user.id}` },
         () => {
-          scheduleTableRefresh("wallets");
+          scheduleTableRefresh("wallets", user.id);
         }
       )
       .on(
@@ -627,51 +673,51 @@ export function AppProvider({ children }: { children: ReactNode }) {
           filter: `user_id=eq.${user.id}`,
         },
         () => {
-          scheduleTableRefresh("transactions");
-          scheduleTableRefresh("wallets");
+          scheduleTableRefresh("transactions", user.id);
+          scheduleTableRefresh("wallets", user.id);
         }
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "savings_goals", filter: `user_id=eq.${user.id}` },
         () => {
-          scheduleTableRefresh("goals");
+          scheduleTableRefresh("goals", user.id);
         }
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "expenses", filter: `user_id=eq.${user.id}` },
         () => {
-          scheduleTableRefresh("expenses");
+          scheduleTableRefresh("expenses", user.id);
         }
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "incomes", filter: `user_id=eq.${user.id}` },
         () => {
-          scheduleTableRefresh("incomes");
+          scheduleTableRefresh("incomes", user.id);
         }
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "loans", filter: `user_id=eq.${user.id}` },
         () => {
-          scheduleTableRefresh("loans");
+          scheduleTableRefresh("loans", user.id);
         }
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "loan_payments", filter: `user_id=eq.${user.id}` },
         () => {
-          scheduleTableRefresh("loanPayments");
-          scheduleTableRefresh("loans");
+          scheduleTableRefresh("loanPayments", user.id);
+          scheduleTableRefresh("loans", user.id);
         }
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "subscriptions", filter: `user_id=eq.${user.id}` },
         () => {
-          scheduleTableRefresh("subscriptions");
+          scheduleTableRefresh("subscriptions", user.id);
         }
       )
       .subscribe();
