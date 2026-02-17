@@ -1,52 +1,144 @@
 import React, { useMemo } from "react";
 import {
+  Platform,
+  Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
-  ScrollView,
-  Pressable,
-  Platform,
   useWindowDimensions,
 } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
-import { useApp } from "@/lib/context";
-import { formatFullCurrency, generateProjectionData } from "@/lib/interest";
-import { MiniChart } from "@/components/MiniChart";
-import { ProjectionChart } from "@/components/ProjectionChart";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
+import { useApp } from "@/lib/context";
+import {
+  calculateMonthlyPayment,
+  formatFullCurrency,
+  generateLoanPayoffProjection,
+  generatePortfolioProjection,
+} from "@/lib/interest";
+import {
+  buildExpenseCategoryBreakdown,
+  buildMonthlyExpenseIncomeSnapshot,
+} from "@/lib/expense-insights";
+import { getUtcMonthKey } from "@/lib/expense-recurrence";
+import { ProjectionChart } from "@/components/ProjectionChart";
+import { CashFlowBarChart } from "@/components/CashFlowBarChart";
+import { LoanPayoffChart } from "@/components/LoanPayoffChart";
+
+function formatCategoryLabel(categoryKey: string): string {
+  return categoryKey
+    .replace(/[_-]+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
 
 export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
-  const { wallets, goals, transactions, totalBalance, currencySymbol } =
-    useApp();
-  const { width: screenWidth } = useWindowDimensions();
+  const { width } = useWindowDimensions();
+  const {
+    wallets,
+    loans,
+    loanPayments,
+    goals,
+    expenses,
+    dashboardSummary,
+    currencySymbol,
+  } = useApp();
   const webTopInset = Platform.OS === "web" ? 67 : 0;
 
-  const projectionData = useMemo(() => {
-    const avgRate =
-      wallets.length > 0
-        ? wallets.reduce((s, w) => s + w.interestRate, 0) / wallets.length
-        : 5;
-    return generateProjectionData(totalBalance, 0, avgRate, 12);
-  }, [totalBalance, wallets]);
-
-  const recentTransactions = useMemo(() => {
-    return [...transactions]
-      .sort(
-        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-      )
-      .slice(0, 5);
-  }, [transactions]);
+  const savingsProjection = useMemo(() => {
+    return generatePortfolioProjection(wallets, 12);
+  }, [wallets]);
 
   const projectedGrowth = useMemo(() => {
-    if (projectionData.length < 2) return 0;
+    if (savingsProjection.length < 2) return 0;
     return (
-      projectionData[projectionData.length - 1].balance - totalBalance
+      savingsProjection[savingsProjection.length - 1].balance -
+      dashboardSummary.totalSavings
     );
-  }, [projectionData, totalBalance]);
+  }, [savingsProjection, dashboardSummary.totalSavings]);
+
+  const currentMonthKey = useMemo(() => getUtcMonthKey(new Date()), []);
+
+  const monthlySnapshot = useMemo(() => {
+    return buildMonthlyExpenseIncomeSnapshot({
+      expenses,
+      incomes: [],
+      monthKey: currentMonthKey,
+    });
+  }, [currentMonthKey, expenses]);
+
+  const monthlyExpenseBreakdown = useMemo(() => {
+    const categories = Array.from(
+      new Set(monthlySnapshot.monthlyExpenses.map((item) => item.category))
+    ).map((key) => ({
+      key,
+      label: formatCategoryLabel(key),
+      icon: "receipt",
+      color: Colors.primary,
+    }));
+
+    return buildExpenseCategoryBreakdown({
+      expenses: monthlySnapshot.monthlyExpenses,
+      categories,
+      limit: 3,
+    });
+  }, [monthlySnapshot.monthlyExpenses]);
+
+  const topLoan = useMemo(() => {
+    if (!loans.length) return null;
+    return [...loans].sort((a, b) => b.balance - a.balance)[0];
+  }, [loans]);
+
+  const loanProjection = useMemo(() => {
+    if (!topLoan) return [];
+    const monthlyPayment = calculateMonthlyPayment(
+      topLoan.principal,
+      topLoan.interestRate,
+      topLoan.termMonths
+    );
+    return generateLoanPayoffProjection(
+      topLoan.balance,
+      topLoan.interestRate,
+      monthlyPayment,
+      topLoan.termMonths
+    );
+  }, [topLoan]);
+
+  const loanTimeline = useMemo(() => {
+    if (!topLoan) return { nextDue: null as Date | null, payoffDate: null as Date | null };
+
+    const relatedPayments = loanPayments
+      .filter((payment) => payment.loanId === topLoan.id)
+      .sort(
+        (a, b) =>
+          new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime()
+      );
+
+    const base = relatedPayments.length
+      ? new Date(relatedPayments[0].paymentDate)
+      : new Date(topLoan.startDate);
+
+    const nextDue = new Date(base);
+    nextDue.setMonth(nextDue.getMonth() + 1);
+
+    const monthsRemaining = Math.max(loanProjection.length - 1, 0);
+    const payoffDate = new Date(base);
+    payoffDate.setMonth(payoffDate.getMonth() + monthsRemaining);
+
+    return { nextDue, payoffDate };
+  }, [loanPayments, loanProjection.length, topLoan]);
+
+  const goalsProgress = useMemo(() => {
+    if (dashboardSummary.goalsTargetTotal <= 0) return 0;
+    return Math.min(
+      dashboardSummary.goalsCurrentTotal / dashboardSummary.goalsTargetTotal,
+      1
+    );
+  }, [dashboardSummary.goalsCurrentTotal, dashboardSummary.goalsTargetTotal]);
 
   return (
     <ScrollView
@@ -55,226 +147,156 @@ export default function DashboardScreen() {
         styles.content,
         {
           paddingTop: insets.top + 16 + webTopInset,
-          paddingBottom: insets.bottom + 100,
+          paddingBottom: insets.bottom + 124,
         },
       ]}
       showsVerticalScrollIndicator={false}
     >
       <View style={styles.header}>
         <View>
-          <Text style={styles.greeting}>Your Savings</Text>
-          <Text style={styles.totalBalance}>
-            {formatFullCurrency(totalBalance, currencySymbol)}
+          <Text style={styles.headerLabel}>Net Balance</Text>
+          <Text style={styles.headerAmount}>
+            {formatFullCurrency(dashboardSummary.netBalance, currencySymbol)}
           </Text>
         </View>
-        <View style={styles.growthBadge}>
-          <Ionicons name="trending-up" size={14} color={Colors.primary} />
-          <Text style={styles.growthText}>
-            +{formatFullCurrency(projectedGrowth, currencySymbol)}/yr
-          </Text>
-        </View>
-      </View>
-
-      <View style={styles.balanceCard}>
-        <LinearGradient
-          colors={[Colors.gradientStart, Colors.gradientEnd]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.balanceGradient}
-        >
-          <View style={styles.balanceCardHeader}>
-            <Text style={styles.balanceCardTitle}>12-Month Projection</Text>
-            <View style={styles.balanceCardBadge}>
-              <Text style={styles.balanceCardBadgeText}>
-                {wallets.length > 0
-                  ? `${(wallets.reduce((s, w) => s + w.interestRate, 0) / wallets.length).toFixed(1)}% avg`
-                  : "5% est"}
-              </Text>
-            </View>
-          </View>
-          <ProjectionChart
-            data={projectionData}
-            width={screenWidth - 64}
-            height={180}
-            currencySymbol={currencySymbol}
-          />
-        </LinearGradient>
+        <Pressable style={styles.reportsButton} onPress={() => router.push("/reports")}>
+          <Ionicons name="analytics" size={16} color={Colors.primary} />
+          <Text style={styles.reportsButtonText}>Reports</Text>
+        </Pressable>
       </View>
 
       <View style={styles.statsRow}>
         <View style={styles.statCard}>
-          <View style={[styles.statIcon, { backgroundColor: "#E8F5E9" }]}>
-            <Ionicons name="wallet" size={20} color={Colors.primary} />
-          </View>
-          <Text style={styles.statValue}>{wallets.length}</Text>
-          <Text style={styles.statLabel}>Wallets</Text>
+          <Text style={styles.statLabel}>Total Savings</Text>
+          <Text style={styles.statValue}>
+            {formatFullCurrency(dashboardSummary.totalSavings, currencySymbol)}
+          </Text>
         </View>
         <View style={styles.statCard}>
-          <View style={[styles.statIcon, { backgroundColor: "#FFF8E1" }]}>
-            <Ionicons name="flag" size={20} color={Colors.accent} />
-          </View>
-          <Text style={styles.statValue}>{goals.length}</Text>
-          <Text style={styles.statLabel}>Goals</Text>
-        </View>
-        <View style={styles.statCard}>
-          <View style={[styles.statIcon, { backgroundColor: "#E3F2FD" }]}>
-            <Ionicons name="swap-vertical" size={20} color={Colors.info} />
-          </View>
-          <Text style={styles.statValue}>{transactions.length}</Text>
-          <Text style={styles.statLabel}>Entries</Text>
+          <Text style={styles.statLabel}>Outstanding Loans</Text>
+          <Text style={[styles.statValue, { color: Colors.danger }]}>
+            {formatFullCurrency(dashboardSummary.outstandingLoans, currencySymbol)}
+          </Text>
         </View>
       </View>
 
-      {wallets.length > 0 && (
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Wallets</Text>
-            <Pressable onPress={() => router.push("/(tabs)/wallets")}>
-              <Text style={styles.seeAll}>See All</Text>
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardTitle}>Savings Growth (12 Months)</Text>
+          <Text style={styles.cardBadge}>
+            +{formatFullCurrency(projectedGrowth, currencySymbol)}
+          </Text>
+        </View>
+        <ProjectionChart
+          data={savingsProjection}
+          width={width - 64}
+          height={190}
+          currencySymbol={currencySymbol}
+        />
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Monthly Income vs Expenses</Text>
+        <CashFlowBarChart
+          income={dashboardSummary.monthlyIncome}
+          expenses={dashboardSummary.monthlyExpenses}
+          currencySymbol={currencySymbol}
+        />
+      </View>
+
+      <View style={styles.section}>
+        <View style={styles.card}>
+          <View style={styles.snapshotHeader}>
+            <Text style={styles.snapshotTitle}>Spending Snapshot (This Month)</Text>
+            <Pressable
+              style={styles.snapshotCta}
+              onPress={() => router.push("/(tabs)/expenses")}
+            >
+              <Text style={styles.snapshotCtaText}>View Details</Text>
             </Pressable>
           </View>
-          {wallets.slice(0, 3).map((wallet) => {
-            const walletTransactions = transactions
-              .filter((t) => t.walletId === wallet.id)
-              .sort(
-                (a, b) =>
-                  new Date(a.date).getTime() - new Date(b.date).getTime()
-              );
-            const chartData =
-              walletTransactions.length > 1
-                ? walletTransactions.reduce<number[]>((acc, t) => {
-                    const last = acc[acc.length - 1] || wallet.balance;
-                    acc.push(
-                      t.type === "deposit"
-                        ? last + t.amount
-                        : last - t.amount
-                    );
-                    return acc;
-                  }, [])
-                : [wallet.balance * 0.8, wallet.balance * 0.9, wallet.balance];
-
-            return (
-              <Pressable
-                key={wallet.id}
-                style={styles.walletCard}
-                onPress={() =>
-                  router.push({
-                    pathname: "/wallet/[id]",
-                    params: { id: wallet.id },
-                  })
-                }
-              >
-                <View style={styles.walletCardLeft}>
-                  <View
-                    style={[
-                      styles.walletIcon,
-                      { backgroundColor: wallet.color + "20" },
-                    ]}
-                  >
-                    <Ionicons
-                      name={wallet.icon as any}
-                      size={22}
-                      color={wallet.color}
-                    />
-                  </View>
-                  <View style={styles.walletInfo}>
-                    <Text style={styles.walletName}>{wallet.name}</Text>
-                    <Text style={styles.walletRate}>
-                      {wallet.interestRate}% APY
-                    </Text>
-                  </View>
-                </View>
-                <View style={styles.walletCardRight}>
-                  <MiniChart
-                    data={chartData}
-                    width={60}
-                    height={30}
-                    color={wallet.color}
-                  />
-                  <Text style={styles.walletBalance}>
-                    {formatFullCurrency(wallet.balance, currencySymbol)}
-                  </Text>
-                </View>
-              </Pressable>
-            );
-          })}
-        </View>
-      )}
-
-      {recentTransactions.length > 0 && (
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Recent Activity</Text>
-          </View>
-          {recentTransactions.map((t) => {
-            const wallet = wallets.find((w) => w.id === t.walletId);
-            return (
-              <View key={t.id} style={styles.transactionItem}>
-                <View
-                  style={[
-                    styles.transactionIcon,
-                    {
-                      backgroundColor:
-                        t.type === "deposit" ? "#E8F5E9" : "#FEE2E2",
-                    },
-                  ]}
-                >
-                  <Ionicons
-                    name={
-                      t.type === "deposit"
-                        ? "arrow-down-circle"
-                        : "arrow-up-circle"
-                    }
-                    size={20}
-                    color={
-                      t.type === "deposit" ? Colors.success : Colors.danger
-                    }
-                  />
-                </View>
-                <View style={styles.transactionInfo}>
-                  <Text style={styles.transactionNote}>
-                    {t.note || (t.type === "deposit" ? "Deposit" : "Withdrawal")}
-                  </Text>
-                  <Text style={styles.transactionWallet}>
-                    {wallet?.name || "Unknown"}
-                  </Text>
-                </View>
-                <Text
-                  style={[
-                    styles.transactionAmount,
-                    {
-                      color:
-                        t.type === "deposit" ? Colors.success : Colors.danger,
-                    },
-                  ]}
-                >
-                  {t.type === "deposit" ? "+" : "-"}
-                  {formatFullCurrency(t.amount, currencySymbol)}
-                </Text>
-              </View>
-            );
-          })}
-        </View>
-      )}
-
-      {wallets.length === 0 && (
-        <View style={styles.emptyState}>
-          <View style={styles.emptyIcon}>
-            <Ionicons name="wallet-outline" size={48} color={Colors.textTertiary} />
-          </View>
-          <Text style={styles.emptyTitle}>Start Saving</Text>
-          <Text style={styles.emptyText}>
-            Create your first wallet to begin tracking your savings and see growth projections.
+          <Text style={styles.snapshotAmount}>
+            {formatFullCurrency(monthlySnapshot.monthlyExpenseTotal, currencySymbol)}
           </Text>
-          <Pressable
-            style={styles.emptyButton}
-            onPress={() => router.push("/(tabs)/wallets")}
-          >
-            <Ionicons name="add" size={20} color="#fff" />
-            <Text style={styles.emptyButtonText}>Create Wallet</Text>
-          </Pressable>
+          <Text style={styles.snapshotMeta}>
+            {monthlySnapshot.monthlyExpenseCount} expense
+            {monthlySnapshot.monthlyExpenseCount === 1 ? "" : "s"} this month
+          </Text>
+          {monthlyExpenseBreakdown.length > 0 ? (
+            <View style={styles.snapshotRows}>
+              {monthlyExpenseBreakdown.map((item) => (
+                <View key={item.key} style={styles.snapshotRow}>
+                  <Text style={styles.snapshotLabel}>{item.label}</Text>
+                  <Text style={styles.snapshotValue}>
+                    {formatFullCurrency(item.amount, currencySymbol)}{" "}
+                    ({(item.share * 100).toFixed(0)}%)
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : (
+            <Text style={styles.emptyLegend}>No expenses recorded this month.</Text>
+          )}
         </View>
-      )}
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Loan Summary</Text>
+        <View style={styles.card}>
+          <View style={styles.loanSummaryTop}>
+            <Text style={styles.loanSummaryLabel}>Total outstanding</Text>
+            <Text style={styles.loanSummaryValue}>
+              {formatFullCurrency(dashboardSummary.outstandingLoans, currencySymbol)}
+            </Text>
+          </View>
+          {topLoan ? (
+            <>
+              <Text style={styles.loanSubTitle}>Top balance: {topLoan.lender}</Text>
+              <Text style={styles.loanSubMeta}>
+                Next due:{" "}
+                {loanTimeline.nextDue
+                  ? loanTimeline.nextDue.toLocaleDateString()
+                  : "N/A"}
+              </Text>
+              <Text style={styles.loanSubMeta}>
+                Projected payoff:{" "}
+                {loanTimeline.payoffDate
+                  ? loanTimeline.payoffDate.toLocaleDateString()
+                  : "N/A"}
+              </Text>
+              <LoanPayoffChart
+                data={loanProjection}
+                width={width - 64}
+                height={190}
+                currencySymbol={currencySymbol}
+              />
+            </>
+          ) : (
+            <Text style={styles.emptyLegend}>No loans yet.</Text>
+          )}
+        </View>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Goals Summary</Text>
+        <View style={styles.card}>
+          <Text style={styles.goalAmount}>
+            {formatFullCurrency(dashboardSummary.goalsCurrentTotal, currencySymbol)} /{" "}
+            {formatFullCurrency(dashboardSummary.goalsTargetTotal, currencySymbol)}
+          </Text>
+          <View style={styles.goalTrack}>
+            <View
+              style={[
+                styles.goalFill,
+                { width: `${Math.round(goalsProgress * 100)}%` },
+              ]}
+            />
+          </View>
+          <Text style={styles.goalText}>
+            {goals.length} goals • {Math.round(goalsProgress * 100)}% complete
+          </Text>
+        </View>
+      </View>
     </ScrollView>
   );
 }
@@ -285,255 +307,206 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
   },
   content: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 20,
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 10,
+    marginBottom: 16,
   },
-  greeting: {
-    fontSize: 15,
+  headerLabel: {
+    fontSize: 14,
     color: Colors.textSecondary,
     fontFamily: "DMSans_400Regular",
-    marginBottom: 4,
   },
-  totalBalance: {
-    fontSize: 32,
-    fontFamily: "DMSans_700Bold",
+  headerAmount: {
+    marginTop: 4,
+    fontSize: 30,
     color: Colors.text,
-    letterSpacing: -0.5,
+    fontFamily: "DMSans_700Bold",
   },
-  growthBadge: {
+  reportsButton: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: Colors.primary + "15",
+    alignSelf: "flex-start",
+    gap: 6,
     paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 20,
-    gap: 4,
-    marginTop: 8,
+    paddingVertical: 7,
+    borderRadius: 18,
+    backgroundColor: Colors.primary + "14",
   },
-  growthText: {
+  reportsButtonText: {
     fontSize: 12,
     color: Colors.primary,
-    fontFamily: "DMSans_600SemiBold",
-  },
-  balanceCard: {
-    borderRadius: 20,
-    overflow: "hidden",
-    marginBottom: 20,
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 8,
-  },
-  balanceGradient: {
-    padding: 20,
-    paddingBottom: 8,
-  },
-  balanceCardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  balanceCardTitle: {
-    fontSize: 14,
-    color: "rgba(255,255,255,0.85)",
-    fontFamily: "DMSans_500Medium",
-  },
-  balanceCardBadge: {
-    backgroundColor: "rgba(255,255,255,0.2)",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 12,
-  },
-  balanceCardBadgeText: {
-    fontSize: 11,
-    color: "#fff",
     fontFamily: "DMSans_600SemiBold",
   },
   statsRow: {
     flexDirection: "row",
-    gap: 12,
-    marginBottom: 24,
+    gap: 10,
+    marginBottom: 14,
   },
   statCard: {
     flex: 1,
     backgroundColor: Colors.surface,
-    borderRadius: 16,
-    padding: 14,
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  statIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 8,
-  },
-  statValue: {
-    fontSize: 20,
-    fontFamily: "DMSans_700Bold",
-    color: Colors.text,
+    borderRadius: 14,
+    padding: 12,
   },
   statLabel: {
     fontSize: 11,
-    color: Colors.textTertiary,
-    fontFamily: "DMSans_400Regular",
-    marginTop: 2,
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontFamily: "DMSans_700Bold",
-    color: Colors.text,
-  },
-  seeAll: {
-    fontSize: 14,
-    color: Colors.primary,
+    color: Colors.textSecondary,
     fontFamily: "DMSans_500Medium",
   },
-  walletCard: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+  statValue: {
+    marginTop: 4,
+    fontSize: 16,
+    color: Colors.text,
+    fontFamily: "DMSans_700Bold",
+  },
+  card: {
     backgroundColor: Colors.surface,
-    padding: 16,
     borderRadius: 16,
-    marginBottom: 10,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
+    padding: 14,
   },
-  walletCardLeft: {
+  cardHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    flex: 1,
-  },
-  walletIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  walletInfo: {
-    flex: 1,
-  },
-  walletName: {
-    fontSize: 15,
-    fontFamily: "DMSans_600SemiBold",
-    color: Colors.text,
-  },
-  walletRate: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-    fontFamily: "DMSans_400Regular",
-    marginTop: 2,
-  },
-  walletCardRight: {
-    alignItems: "flex-end",
-    gap: 4,
-  },
-  walletBalance: {
-    fontSize: 15,
-    fontFamily: "DMSans_700Bold",
-    color: Colors.text,
-  },
-  transactionItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 12,
-    gap: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderLight,
-  },
-  transactionIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  transactionInfo: {
-    flex: 1,
-  },
-  transactionNote: {
-    fontSize: 14,
-    fontFamily: "DMSans_500Medium",
-    color: Colors.text,
-  },
-  transactionWallet: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-    fontFamily: "DMSans_400Regular",
-    marginTop: 2,
-  },
-  transactionAmount: {
-    fontSize: 14,
-    fontFamily: "DMSans_700Bold",
-  },
-  emptyState: {
-    alignItems: "center",
-    paddingTop: 40,
-    paddingHorizontal: 20,
-  },
-  emptyIcon: {
-    width: 80,
-    height: 80,
-    borderRadius: 24,
-    backgroundColor: Colors.borderLight,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 16,
-  },
-  emptyTitle: {
-    fontSize: 20,
-    fontFamily: "DMSans_700Bold",
-    color: Colors.text,
+    justifyContent: "space-between",
     marginBottom: 8,
   },
-  emptyText: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    fontFamily: "DMSans_400Regular",
-    textAlign: "center",
-    lineHeight: 20,
-    marginBottom: 20,
+  cardTitle: {
+    fontSize: 15,
+    color: Colors.text,
+    fontFamily: "DMSans_700Bold",
   },
-  emptyButton: {
+  cardBadge: {
+    fontSize: 12,
+    color: Colors.success,
+    fontFamily: "DMSans_700Bold",
+  },
+  section: {
+    marginTop: 16,
+  },
+  sectionTitle: {
+    fontSize: 17,
+    color: Colors.text,
+    fontFamily: "DMSans_700Bold",
+    marginBottom: 10,
+  },
+  emptyLegend: {
+    marginTop: 8,
+    fontSize: 12,
+    color: Colors.textTertiary,
+    fontFamily: "DMSans_500Medium",
+  },
+  snapshotAmount: {
+    fontSize: 24,
+    color: Colors.danger,
+    fontFamily: "DMSans_700Bold",
+  },
+  snapshotHeader: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: Colors.primary,
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderRadius: 14,
+    justifyContent: "space-between",
+    gap: 8,
+    marginBottom: 8,
+  },
+  snapshotTitle: {
+    flex: 1,
+    flexShrink: 1,
+    fontSize: 15,
+    color: Colors.text,
+    fontFamily: "DMSans_700Bold",
+  },
+  snapshotCta: {
+    flexShrink: 0,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 18,
+    backgroundColor: Colors.primary + "14",
+  },
+  snapshotCtaText: {
+    fontSize: 12,
+    color: Colors.primary,
+    fontFamily: "DMSans_600SemiBold",
+  },
+  snapshotMeta: {
+    marginTop: 4,
+    fontSize: 12,
+    color: Colors.textSecondary,
+    fontFamily: "DMSans_500Medium",
+  },
+  snapshotRows: {
+    marginTop: 12,
     gap: 8,
   },
-  emptyButtonText: {
-    fontSize: 15,
-    color: "#fff",
-    fontFamily: "DMSans_600SemiBold",
+  snapshotRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  snapshotLabel: {
+    flex: 1,
+    fontSize: 12,
+    color: Colors.textSecondary,
+    fontFamily: "DMSans_500Medium",
+  },
+  snapshotValue: {
+    fontSize: 12,
+    color: Colors.text,
+    fontFamily: "DMSans_700Bold",
+  },
+  loanSummaryTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 4,
+  },
+  loanSummaryLabel: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    fontFamily: "DMSans_500Medium",
+  },
+  loanSummaryValue: {
+    fontSize: 14,
+    color: Colors.danger,
+    fontFamily: "DMSans_700Bold",
+  },
+  loanSubTitle: {
+    marginBottom: 4,
+    fontSize: 12,
+    color: Colors.textSecondary,
+    fontFamily: "DMSans_500Medium",
+  },
+  loanSubMeta: {
+    marginBottom: 4,
+    fontSize: 12,
+    color: Colors.textSecondary,
+    fontFamily: "DMSans_400Regular",
+  },
+  goalAmount: {
+    fontSize: 18,
+    color: Colors.text,
+    fontFamily: "DMSans_700Bold",
+  },
+  goalTrack: {
+    marginTop: 12,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: Colors.borderLight,
+    overflow: "hidden",
+  },
+  goalFill: {
+    height: "100%",
+    backgroundColor: Colors.primary,
+  },
+  goalText: {
+    marginTop: 8,
+    fontSize: 12,
+    color: Colors.textSecondary,
+    fontFamily: "DMSans_500Medium",
   },
 });

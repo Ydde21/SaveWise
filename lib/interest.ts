@@ -13,6 +13,16 @@ export function getCompoundingPeriods(
   }
 }
 
+export function getEffectiveMonthlyRate(
+  annualRate: number,
+  compoundingFrequency: "daily" | "monthly" | "quarterly" | "annually" = "monthly"
+): number {
+  const n = getCompoundingPeriods(compoundingFrequency);
+  const r = annualRate / 100;
+  if (r === 0) return 0;
+  return Math.pow(1 + r / n, n / 12) - 1;
+}
+
 export function compoundInterest(
   principal: number,
   annualRate: number,
@@ -28,26 +38,26 @@ export function futureValueWithDeposits(
   principal: number,
   monthlyDeposit: number,
   annualRate: number,
-  years: number
+  years: number,
+  compoundingFrequency: "daily" | "monthly" | "quarterly" | "annually" = "monthly"
 ): number {
-  const r = annualRate / 100 / 12;
-  const t = years * 12;
-
-  if (r === 0) {
-    return principal + monthlyDeposit * t;
-  }
-
-  const principalGrowth = principal * Math.pow(1 + r, t);
-  const depositGrowth = monthlyDeposit * ((Math.pow(1 + r, t) - 1) / r);
-
-  return principalGrowth + depositGrowth;
+  const months = Math.max(0, Math.round(years * 12));
+  const data = generateProjectionData(
+    principal,
+    monthlyDeposit,
+    annualRate,
+    months,
+    compoundingFrequency
+  );
+  return data[data.length - 1]?.balance ?? principal;
 }
 
 export function generateProjectionData(
   principal: number,
   monthlyDeposit: number,
   annualRate: number,
-  months: number
+  months: number,
+  compoundingFrequency: "daily" | "monthly" | "quarterly" | "annually" = "monthly"
 ): { month: number; balance: number; interest: number; deposits: number }[] {
   const data: {
     month: number;
@@ -55,14 +65,15 @@ export function generateProjectionData(
     interest: number;
     deposits: number;
   }[] = [];
-  const r = annualRate / 100 / 12;
+  const r = getEffectiveMonthlyRate(annualRate, compoundingFrequency);
+  const totalMonths = Math.max(0, Math.floor(months));
   let balance = principal;
   let totalInterest = 0;
   let totalDeposits = 0;
 
   data.push({ month: 0, balance: principal, interest: 0, deposits: 0 });
 
-  for (let m = 1; m <= months; m++) {
+  for (let m = 1; m <= totalMonths; m++) {
     const interestThisMonth = balance * r;
     totalInterest += interestThisMonth;
     totalDeposits += monthlyDeposit;
@@ -77,6 +88,44 @@ export function generateProjectionData(
   }
 
   return data;
+}
+
+export function generatePortfolioProjection(
+  wallets: Array<{
+    balance: number;
+    interestRate: number;
+    compoundingFrequency: "daily" | "monthly" | "quarterly" | "annually";
+  }>,
+  months: number
+): { month: number; balance: number }[] {
+  const totalMonths = Math.max(0, Math.floor(months));
+  if (!wallets.length) {
+    return generateProjectionData(0, 0, 0, totalMonths).map((point) => ({
+      month: point.month,
+      balance: point.balance,
+    }));
+  }
+
+  const monthlySeries = wallets.map((wallet) =>
+    generateProjectionData(
+      wallet.balance,
+      0,
+      wallet.interestRate,
+      totalMonths,
+      wallet.compoundingFrequency
+    )
+  );
+
+  return Array.from({ length: totalMonths + 1 }).map((_, monthIndex) => {
+    const balance = monthlySeries.reduce(
+      (sum, series) => sum + (series[monthIndex]?.balance ?? 0),
+      0
+    );
+    return {
+      month: monthIndex,
+      balance: Math.round(balance * 100) / 100,
+    };
+  });
 }
 
 export function calculateMonthlyPayment(
@@ -183,4 +232,46 @@ export function formatFullCurrency(
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
+}
+
+export function calculateNetBalance(
+  totalSavings: number,
+  totalExpenses: number,
+  outstandingLoans: number
+): number {
+  return totalSavings - totalExpenses - outstandingLoans;
+}
+
+export function calculateMonthlyCashflow(
+  monthlyIncome: number,
+  monthlyExpenses: number
+): number {
+  return monthlyIncome - monthlyExpenses;
+}
+
+export function sumAmounts<T extends { amount: number }>(items: T[]): number {
+  return items.reduce((sum, item) => sum + item.amount, 0);
+}
+
+export function getMonthKey(dateValue: string): string {
+  const d = new Date(dateValue);
+  return `${d.getUTCFullYear()}-${`${d.getUTCMonth() + 1}`.padStart(2, "0")}`;
+}
+
+export function getCurrentMonthTotals<T extends { amount: number; date: string }>(
+  items: T[],
+  monthKey: string = getMonthKey(new Date().toISOString())
+): number {
+  return items
+    .filter((item) => getMonthKey(item.date) === monthKey)
+    .reduce((sum, item) => sum + item.amount, 0);
+}
+
+export function getGoalAdjustedMonthlyCapacity(params: {
+  monthlyIncome: number;
+  monthlyExpenses: number;
+  totalMonthlyLoanPayment: number;
+}): number {
+  const { monthlyIncome, monthlyExpenses, totalMonthlyLoanPayment } = params;
+  return Math.max(0, monthlyIncome - monthlyExpenses - totalMonthlyLoanPayment);
 }

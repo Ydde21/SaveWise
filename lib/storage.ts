@@ -107,6 +107,16 @@ const KEYS = {
   ONBOARDED: "savewise_onboarded",
 };
 
+const LEGACY_FINANCIAL_KEYS = [
+  KEYS.WALLETS,
+  KEYS.TRANSACTIONS,
+  KEYS.GOALS,
+  KEYS.EXPENSES,
+  KEYS.LOANS,
+  KEYS.LOAN_PAYMENTS,
+  KEYS.SNAPSHOTS,
+];
+
 function generateId(): string {
   return Crypto.randomUUID();
 }
@@ -433,6 +443,10 @@ export async function saveSettings(settings: {
   currencySymbol: string;
 }): Promise<void> {
   await AsyncStorage.setItem(KEYS.SETTINGS, JSON.stringify(settings));
+}
+
+export async function clearLegacyFinancialData(): Promise<void> {
+  await AsyncStorage.multiRemove(LEGACY_FINANCIAL_KEYS);
 }
 
 export async function exportData(): Promise<string> {

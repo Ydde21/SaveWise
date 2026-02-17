@@ -1,5 +1,7 @@
 import React, { useState, useMemo, useCallback } from "react";
 import {
+  FlatList,
+  KeyboardAvoidingView,
   StyleSheet,
   Text,
   View,
@@ -15,11 +17,12 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, router } from "expo-router";
 import * as Haptics from "expo-haptics";
+import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { useApp } from "@/lib/context";
 import {
   formatFullCurrency,
   generateProjectionData,
-  compoundInterest,
+  futureValueWithDeposits,
 } from "@/lib/interest";
 import { ProjectionChart } from "@/components/ProjectionChart";
 import Colors from "@/constants/colors";
@@ -34,6 +37,7 @@ export default function WalletDetailScreen() {
     currencySymbol,
     addTransaction,
     removeTransaction,
+    isOnline,
   } = useApp();
   const wallet = wallets.find((w) => w.id === id);
   const [showAddTransaction, setShowAddTransaction] = useState(false);
@@ -43,6 +47,14 @@ export default function WalletDetailScreen() {
   const [projectionMonths, setProjectionMonths] = useState(12);
   const [monthlyDeposit, setMonthlyDeposit] = useState("0");
   const webTopInset = Platform.OS === "web" ? 67 : 0;
+  const modalKeyboardBottomOffset = insets.bottom + 24;
+  const modalKeyboardExtraSpace = 12;
+  const chartWidth = screenWidth - 64;
+
+  const monthlyDepositAmount = useMemo(() => {
+    const parsed = Number.parseFloat(monthlyDeposit.replace(/,/g, ""));
+    return Number.isFinite(parsed) ? parsed : 0;
+  }, [monthlyDeposit]);
 
   const walletTransactions = useMemo(() => {
     return transactions
@@ -56,47 +68,65 @@ export default function WalletDetailScreen() {
     if (!wallet) return [];
     return generateProjectionData(
       wallet.balance,
-      parseFloat(monthlyDeposit) || 0,
+      monthlyDepositAmount,
       wallet.interestRate,
-      projectionMonths
+      projectionMonths,
+      wallet.compoundingFrequency
     );
-  }, [wallet, monthlyDeposit, projectionMonths]);
+  }, [wallet, monthlyDepositAmount, projectionMonths]);
 
   const projectedBalance = useMemo(() => {
     if (!wallet) return 0;
-    return compoundInterest(
+    return futureValueWithDeposits(
       wallet.balance,
+      monthlyDepositAmount,
       wallet.interestRate,
-      wallet.compoundingFrequency,
-      projectionMonths / 12
+      projectionMonths / 12,
+      wallet.compoundingFrequency
     );
-  }, [wallet, projectionMonths]);
+  }, [wallet, monthlyDepositAmount, projectionMonths]);
 
   const handleAddTransaction = useCallback(async () => {
+    if (!isOnline) return;
     if (!txAmount || !id) return;
     const amount = parseFloat(txAmount);
     if (isNaN(amount) || amount <= 0) return;
 
-    await addTransaction({
-      walletId: id,
-      type: txType,
-      amount,
-      note: txNote.trim(),
-      date: new Date().toISOString(),
-    });
-    if (Platform.OS !== "web") {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    try {
+      await addTransaction({
+        walletId: id,
+        type: txType,
+        amount,
+        note: txNote.trim(),
+        date: new Date().toISOString(),
+      });
+      if (Platform.OS !== "web") {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+      setTxAmount("");
+      setTxNote("");
+      setShowAddTransaction(false);
+    } catch (error) {
+      Alert.alert(
+        "Unable to Add Transaction",
+        error instanceof Error ? error.message : "Please try again."
+      );
     }
-    setTxAmount("");
-    setTxNote("");
-    setShowAddTransaction(false);
-  }, [txAmount, txType, txNote, id, addTransaction]);
+  }, [txAmount, txType, txNote, id, addTransaction, isOnline]);
 
   const handleDeleteTransaction = useCallback(
     (txId: string) => {
+      if (!isOnline) return;
+      const action = async () => {
+        try {
+          await removeTransaction(txId);
+        } catch (error) {
+          console.error("Delete transaction failed:", error);
+        }
+      };
       if (Platform.OS === "web") {
         if (confirm("Delete this transaction?")) {
-          removeTransaction(txId);
+          action();
         }
         return;
       }
@@ -105,11 +135,11 @@ export default function WalletDetailScreen() {
         {
           text: "Delete",
           style: "destructive",
-          onPress: () => removeTransaction(txId),
+          onPress: () => action(),
         },
       ]);
     },
-    [removeTransaction]
+    [removeTransaction, isOnline]
   );
 
   if (!wallet) {
@@ -125,7 +155,16 @@ export default function WalletDetailScreen() {
     );
   }
 
-  const projectedInterest = projectedBalance - wallet.balance;
+  const projectedInterest =
+    projectedBalance - wallet.balance - monthlyDepositAmount * projectionMonths;
+
+  const handleMonthlyDepositChange = useCallback((text: string) => {
+    const sanitized = text
+      .replace(/,/g, "")
+      .replace(/[^\d.]/g, "")
+      .replace(/^(\d*\.?\d*).*$/, "$1");
+    setMonthlyDeposit(sanitized);
+  }, []);
 
   return (
     <View style={styles.container}>
@@ -149,8 +188,13 @@ export default function WalletDetailScreen() {
           </Pressable>
           <Text style={styles.headerTitle}>{wallet.name}</Text>
           <Pressable
-            style={[styles.headerAdd, { backgroundColor: wallet.color }]}
+            style={[
+              styles.headerAdd,
+              { backgroundColor: wallet.color },
+              !isOnline && { opacity: 0.5 },
+            ]}
             onPress={() => setShowAddTransaction(true)}
+            disabled={!isOnline}
           >
             <Ionicons name="add" size={22} color="#fff" />
           </Pressable>
@@ -244,7 +288,7 @@ export default function WalletDetailScreen() {
                 placeholderTextColor={Colors.textTertiary}
                 keyboardType="decimal-pad"
                 value={monthlyDeposit}
-                onChangeText={setMonthlyDeposit}
+                onChangeText={handleMonthlyDepositChange}
               />
             </View>
           </View>
@@ -252,7 +296,7 @@ export default function WalletDetailScreen() {
           <View style={styles.chartContainer}>
             <ProjectionChart
               data={projectionData}
-              width={screenWidth - 40}
+              width={chartWidth}
               height={200}
               currencySymbol={currencySymbol}
             />
@@ -274,58 +318,64 @@ export default function WalletDetailScreen() {
               </Text>
             </View>
           ) : (
-            walletTransactions.map((t) => (
-              <Pressable
-                key={t.id}
-                style={styles.transactionItem}
-                onLongPress={() => handleDeleteTransaction(t.id)}
-              >
-                <View
-                  style={[
-                    styles.txIcon,
-                    {
-                      backgroundColor:
-                        t.type === "deposit" ? "#E8F5E9" : "#FEE2E2",
-                    },
-                  ]}
+            <FlatList
+              data={walletTransactions}
+              keyExtractor={(t) => t.id}
+              scrollEnabled={false}
+              initialNumToRender={20}
+              windowSize={7}
+              renderItem={({ item: t }) => (
+                <Pressable
+                  style={styles.transactionItem}
+                  onLongPress={isOnline ? () => handleDeleteTransaction(t.id) : undefined}
                 >
-                  <Ionicons
-                    name={
-                      t.type === "deposit"
-                        ? "arrow-down-circle"
-                        : "arrow-up-circle"
-                    }
-                    size={20}
-                    color={
-                      t.type === "deposit" ? Colors.success : Colors.danger
-                    }
-                  />
-                </View>
-                <View style={styles.txInfo}>
-                  <Text style={styles.txNote}>
-                    {t.note ||
-                      (t.type === "deposit" ? "Deposit" : "Withdrawal")}
-                  </Text>
-                  <Text style={styles.txDate}>
-                    {new Date(t.date).toLocaleDateString()}
-                  </Text>
-                </View>
-                <Text
-                  style={[
-                    styles.txAmount,
-                    {
-                      color:
+                  <View
+                    style={[
+                      styles.txIcon,
+                      {
+                        backgroundColor:
+                          t.type === "deposit" ? "#E8F5E9" : "#FEE2E2",
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      name={
                         t.type === "deposit"
-                          ? Colors.success
-                          : Colors.danger,
-                    },
-                  ]}
-                >
-                  {t.type === "deposit" ? "+" : "-"}
-                  {formatFullCurrency(t.amount, currencySymbol)}
-                </Text>
-              </Pressable>
-            ))
+                          ? "arrow-down-circle"
+                          : "arrow-up-circle"
+                      }
+                      size={20}
+                      color={
+                        t.type === "deposit" ? Colors.success : Colors.danger
+                      }
+                    />
+                  </View>
+                  <View style={styles.txInfo}>
+                    <Text style={styles.txNote}>
+                      {t.note ||
+                        (t.type === "deposit" ? "Deposit" : "Withdrawal")}
+                    </Text>
+                    <Text style={styles.txDate}>
+                      {new Date(t.date).toLocaleDateString()}
+                    </Text>
+                  </View>
+                  <Text
+                    style={[
+                      styles.txAmount,
+                      {
+                        color:
+                          t.type === "deposit"
+                            ? Colors.success
+                            : Colors.danger,
+                      },
+                    ]}
+                  >
+                    {t.type === "deposit" ? "+" : "-"}
+                    {formatFullCurrency(t.amount, currencySymbol)}
+                  </Text>
+                </Pressable>
+              )}
+            />
           )}
         </View>
       </ScrollView>
@@ -337,120 +387,132 @@ export default function WalletDetailScreen() {
         onRequestClose={() => setShowAddTransaction(false)}
       >
         <View style={styles.modalOverlay}>
-          <View
-            style={[
-              styles.modalContent,
-              { paddingBottom: insets.bottom + 20 },
-            ]}
+          <KeyboardAvoidingView
+            style={styles.modalKeyboard}
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
           >
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>New Transaction</Text>
-              <Pressable
-                onPress={() => {
-                  setTxAmount("");
-                  setTxNote("");
-                  setShowAddTransaction(false);
-                }}
-              >
-                <Ionicons name="close" size={24} color={Colors.text} />
-              </Pressable>
-            </View>
-
-            <View style={styles.txTypeRow}>
-              <Pressable
-                style={[
-                  styles.txTypeBtn,
-                  txType === "deposit" && {
-                    backgroundColor: Colors.success + "15",
-                    borderColor: Colors.success,
-                  },
-                ]}
-                onPress={() => setTxType("deposit")}
-              >
-                <Ionicons
-                  name="arrow-down-circle"
-                  size={20}
-                  color={
-                    txType === "deposit"
-                      ? Colors.success
-                      : Colors.textSecondary
-                  }
-                />
-                <Text
-                  style={[
-                    styles.txTypeBtnText,
-                    txType === "deposit" && { color: Colors.success },
-                  ]}
-                >
-                  Deposit
-                </Text>
-              </Pressable>
-              <Pressable
-                style={[
-                  styles.txTypeBtn,
-                  txType === "withdrawal" && {
-                    backgroundColor: Colors.danger + "15",
-                    borderColor: Colors.danger,
-                  },
-                ]}
-                onPress={() => setTxType("withdrawal")}
-              >
-                <Ionicons
-                  name="arrow-up-circle"
-                  size={20}
-                  color={
-                    txType === "withdrawal"
-                      ? Colors.danger
-                      : Colors.textSecondary
-                  }
-                />
-                <Text
-                  style={[
-                    styles.txTypeBtnText,
-                    txType === "withdrawal" && { color: Colors.danger },
-                  ]}
-                >
-                  Withdrawal
-                </Text>
-              </Pressable>
-            </View>
-
-            <Text style={styles.inputLabel}>Amount</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="0.00"
-              placeholderTextColor={Colors.textTertiary}
-              keyboardType="decimal-pad"
-              value={txAmount}
-              onChangeText={setTxAmount}
-            />
-
-            <Text style={styles.inputLabel}>Note (optional)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g. Monthly savings"
-              placeholderTextColor={Colors.textTertiary}
-              value={txNote}
-              onChangeText={setTxNote}
-            />
-
-            <Pressable
+            <View
               style={[
-                styles.submitBtn,
-                {
-                  backgroundColor:
-                    txType === "deposit" ? Colors.success : Colors.danger,
-                },
-                !txAmount && styles.submitBtnDisabled,
+                styles.modalContent,
+                { paddingBottom: insets.bottom + 20 },
               ]}
-              onPress={handleAddTransaction}
-              disabled={!txAmount}
             >
-              <Text style={styles.submitBtnText}>
-                {txType === "deposit" ? "Add Deposit" : "Make Withdrawal"}
-              </Text>
-            </Pressable>
-          </View>
+              <KeyboardAwareScrollViewCompat
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                bottomOffset={modalKeyboardBottomOffset}
+                extraKeyboardSpace={modalKeyboardExtraSpace}
+              >
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>New Transaction</Text>
+                  <Pressable
+                    onPress={() => {
+                      setTxAmount("");
+                      setTxNote("");
+                      setShowAddTransaction(false);
+                    }}
+                  >
+                    <Ionicons name="close" size={24} color={Colors.text} />
+                  </Pressable>
+                </View>
+
+                <View style={styles.txTypeRow}>
+                  <Pressable
+                    style={[
+                      styles.txTypeBtn,
+                      txType === "deposit" && {
+                        backgroundColor: Colors.success + "15",
+                        borderColor: Colors.success,
+                      },
+                    ]}
+                    onPress={() => setTxType("deposit")}
+                  >
+                    <Ionicons
+                      name="arrow-down-circle"
+                      size={20}
+                      color={
+                        txType === "deposit"
+                          ? Colors.success
+                          : Colors.textSecondary
+                      }
+                    />
+                    <Text
+                      style={[
+                        styles.txTypeBtnText,
+                        txType === "deposit" && { color: Colors.success },
+                      ]}
+                    >
+                      Deposit
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    style={[
+                      styles.txTypeBtn,
+                      txType === "withdrawal" && {
+                        backgroundColor: Colors.danger + "15",
+                        borderColor: Colors.danger,
+                      },
+                    ]}
+                    onPress={() => setTxType("withdrawal")}
+                  >
+                    <Ionicons
+                      name="arrow-up-circle"
+                      size={20}
+                      color={
+                        txType === "withdrawal"
+                          ? Colors.danger
+                          : Colors.textSecondary
+                      }
+                    />
+                    <Text
+                      style={[
+                        styles.txTypeBtnText,
+                        txType === "withdrawal" && { color: Colors.danger },
+                      ]}
+                    >
+                      Withdrawal
+                    </Text>
+                  </Pressable>
+                </View>
+
+                <Text style={styles.inputLabel}>Amount</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="0.00"
+                  placeholderTextColor={Colors.textTertiary}
+                  keyboardType="decimal-pad"
+                  value={txAmount}
+                  onChangeText={setTxAmount}
+                />
+
+                <Text style={styles.inputLabel}>Note (optional)</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="e.g. Monthly savings"
+                  placeholderTextColor={Colors.textTertiary}
+                  value={txNote}
+                  onChangeText={setTxNote}
+                />
+
+                <Pressable
+                  style={[
+                    styles.submitBtn,
+                    {
+                      backgroundColor:
+                        txType === "deposit" ? Colors.success : Colors.danger,
+                    },
+                    (!txAmount || !isOnline) && styles.submitBtnDisabled,
+                  ]}
+                  onPress={handleAddTransaction}
+                  disabled={!txAmount || !isOnline}
+                >
+                  <Text style={styles.submitBtnText}>
+                    {txType === "deposit" ? "Add Deposit" : "Make Withdrawal"}
+                  </Text>
+                </Pressable>
+              </KeyboardAwareScrollViewCompat>
+            </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
     </View>
@@ -679,11 +741,16 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "flex-end",
   },
+  modalKeyboard: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
   modalContent: {
     backgroundColor: Colors.surface,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 24,
+    maxHeight: "90%",
   },
   modalHeader: {
     flexDirection: "row",

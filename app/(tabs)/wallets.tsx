@@ -3,6 +3,8 @@ import {
   StyleSheet,
   Text,
   View,
+  FlatList,
+  KeyboardAvoidingView,
   ScrollView,
   Pressable,
   TextInput,
@@ -14,6 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import * as Haptics from "expo-haptics";
+import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { useApp } from "@/lib/context";
 import { formatFullCurrency } from "@/lib/interest";
 import { WALLET_COLORS, WALLET_ICONS } from "@/lib/storage";
@@ -21,7 +24,8 @@ import Colors from "@/constants/colors";
 
 export default function WalletsScreen() {
   const insets = useSafeAreaInsets();
-  const { wallets, currencySymbol, addWallet, removeWallet } = useApp();
+  const { wallets, currencySymbol, addWallet, removeWallet, isOnline } =
+    useApp();
   const [showCreate, setShowCreate] = useState(false);
   const [name, setName] = useState("");
   const [balance, setBalance] = useState("");
@@ -31,7 +35,10 @@ export default function WalletsScreen() {
   >("monthly");
   const [selectedColor, setSelectedColor] = useState(WALLET_COLORS[0]);
   const [selectedIcon, setSelectedIcon] = useState(WALLET_ICONS[0]);
+  const [isSaving, setIsSaving] = useState(false);
   const webTopInset = Platform.OS === "web" ? 67 : 0;
+  const modalKeyboardBottomOffset = insets.bottom + 24;
+  const modalKeyboardExtraSpace = 12;
 
   const resetForm = useCallback(() => {
     setName("");
@@ -43,28 +50,60 @@ export default function WalletsScreen() {
   }, []);
 
   const handleCreate = useCallback(async () => {
-    if (!name.trim()) return;
-    await addWallet({
-      name: name.trim(),
-      balance: parseFloat(balance) || 0,
-      interestRate: parseFloat(rate) || 0,
-      compoundingFrequency: frequency,
-      currency: "USD",
-      color: selectedColor,
-      icon: selectedIcon,
-    });
-    if (Platform.OS !== "web") {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    if (!name.trim() || isSaving) return;
+    try {
+      setIsSaving(true);
+      await addWallet({
+        name: name.trim(),
+        balance: parseFloat(balance) || 0,
+        interestRate: parseFloat(rate) || 0,
+        compoundingFrequency: frequency,
+        currency: "USD",
+        color: selectedColor,
+        icon: selectedIcon,
+      });
+      if (Platform.OS !== "web") {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+      resetForm();
+      setShowCreate(false);
+    } catch (error) {
+      Alert.alert(
+        "Unable to Create Savings",
+        error instanceof Error ? error.message : "Please try again.",
+      );
+    } finally {
+      setIsSaving(false);
     }
-    resetForm();
-    setShowCreate(false);
-  }, [name, balance, rate, frequency, selectedColor, selectedIcon, addWallet, resetForm]);
+  }, [
+    name,
+    balance,
+    rate,
+    frequency,
+    selectedColor,
+    selectedIcon,
+    addWallet,
+    resetForm,
+    isSaving,
+  ]);
 
   const handleDelete = useCallback(
     (id: string, walletName: string) => {
+      if (!isOnline) return;
+      const action = async () => {
+        try {
+          await removeWallet(id);
+        } catch (error) {
+          console.error("Delete wallet failed:", error);
+        }
+      };
       if (Platform.OS === "web") {
-        if (confirm(`Delete "${walletName}"? This will also remove all its transactions.`)) {
-          removeWallet(id);
+        if (
+          confirm(
+            `Delete "${walletName}"? This will also remove all its transactions.`,
+          )
+        ) {
+          action();
         }
         return;
       }
@@ -76,12 +115,12 @@ export default function WalletsScreen() {
           {
             text: "Delete",
             style: "destructive",
-            onPress: () => removeWallet(id),
+            onPress: () => action(),
           },
-        ]
+        ],
       );
     },
-    [removeWallet]
+    [removeWallet, isOnline],
   );
 
   const frequencies = [
@@ -104,10 +143,11 @@ export default function WalletsScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
-          <Text style={styles.title}>Wallets</Text>
+          <Text style={styles.title}>Savings</Text>
           <Pressable
-            style={styles.addButton}
+            style={[styles.addButton, !isOnline && styles.addButtonDisabled]}
             onPress={() => setShowCreate(true)}
+            disabled={!isOnline}
           >
             <Ionicons name="add" size={24} color="#fff" />
           </Pressable>
@@ -122,58 +162,68 @@ export default function WalletsScreen() {
                 color={Colors.textTertiary}
               />
             </View>
-            <Text style={styles.emptyTitle}>No Wallets Yet</Text>
+            <Text style={styles.emptyTitle}>No Savings Yet</Text>
             <Text style={styles.emptyText}>
-              Create a wallet to start tracking your savings with interest projections.
+              Create a wallet to start tracking your savings with interest
+              projections.
             </Text>
           </View>
         ) : (
-          wallets.map((wallet) => (
-            <Pressable
-              key={wallet.id}
-              style={styles.walletCard}
-              onPress={() =>
-                router.push({
-                  pathname: "/wallet/[id]",
-                  params: { id: wallet.id },
-                })
-              }
-              onLongPress={() => handleDelete(wallet.id, wallet.name)}
-            >
-              <View style={styles.walletCardTop}>
-                <View
-                  style={[
-                    styles.walletIconContainer,
-                    { backgroundColor: wallet.color + "20" },
-                  ]}
-                >
+          <FlatList
+            data={wallets}
+            keyExtractor={(wallet) => wallet.id}
+            scrollEnabled={false}
+            initialNumToRender={20}
+            windowSize={7}
+            renderItem={({ item: wallet }) => (
+              <Pressable
+                style={styles.walletCard}
+                onPress={() =>
+                  router.push({
+                    pathname: "/wallet/[id]",
+                    params: { id: wallet.id },
+                  })
+                }
+                onLongPress={
+                  isOnline
+                    ? () => handleDelete(wallet.id, wallet.name)
+                    : undefined
+                }
+              >
+                <View style={styles.walletCardTop}>
+                  <View
+                    style={[
+                      styles.walletIconContainer,
+                      { backgroundColor: wallet.color + "20" },
+                    ]}
+                  >
+                    <Ionicons
+                      name={wallet.icon as any}
+                      size={24}
+                      color={wallet.color}
+                    />
+                  </View>
+                  <View style={styles.walletMeta}>
+                    <Text style={styles.walletName}>{wallet.name}</Text>
+                    <Text style={styles.walletFreq}>
+                      {wallet.interestRate}% APY {"\u2022"} {wallet.compoundingFrequency} compounding
+                    </Text>
+                  </View>
                   <Ionicons
-                    name={wallet.icon as any}
-                    size={24}
-                    color={wallet.color}
+                    name="chevron-forward"
+                    size={20}
+                    color={Colors.textTertiary}
                   />
                 </View>
-                <View style={styles.walletMeta}>
-                  <Text style={styles.walletName}>{wallet.name}</Text>
-                  <Text style={styles.walletFreq}>
-                    {wallet.interestRate}% APY ·{" "}
-                    {wallet.compoundingFrequency} compounding
+                <View style={styles.walletCardBottom}>
+                  <Text style={styles.walletBalanceLabel}>Balance</Text>
+                  <Text style={[styles.walletBalance, { color: wallet.color }]}>
+                    {formatFullCurrency(wallet.balance, currencySymbol)}
                   </Text>
                 </View>
-                <Ionicons
-                  name="chevron-forward"
-                  size={20}
-                  color={Colors.textTertiary}
-                />
-              </View>
-              <View style={styles.walletCardBottom}>
-                <Text style={styles.walletBalanceLabel}>Balance</Text>
-                <Text style={[styles.walletBalance, { color: wallet.color }]}>
-                  {formatFullCurrency(wallet.balance, currencySymbol)}
-                </Text>
-              </View>
-            </Pressable>
-          ))
+              </Pressable>
+            )}
+          />
         )}
       </ScrollView>
 
@@ -184,130 +234,145 @@ export default function WalletsScreen() {
         onRequestClose={() => setShowCreate(false)}
       >
         <View style={styles.modalOverlay}>
-          <View
-            style={[
-              styles.modalContent,
-              { paddingBottom: insets.bottom + 20 },
-            ]}
+          <KeyboardAvoidingView
+            style={styles.modalKeyboard}
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
           >
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>New Wallet</Text>
-              <Pressable onPress={() => { resetForm(); setShowCreate(false); }}>
-                <Ionicons name="close" size={24} color={Colors.text} />
-              </Pressable>
-            </View>
-
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={styles.inputLabel}>Name</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. Emergency Fund"
-                placeholderTextColor={Colors.textTertiary}
-                value={name}
-                onChangeText={setName}
-              />
-
-              <Text style={styles.inputLabel}>Starting Balance</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="0.00"
-                placeholderTextColor={Colors.textTertiary}
-                keyboardType="decimal-pad"
-                value={balance}
-                onChangeText={setBalance}
-              />
-
-              <Text style={styles.inputLabel}>Annual Interest Rate (%)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="5.0"
-                placeholderTextColor={Colors.textTertiary}
-                keyboardType="decimal-pad"
-                value={rate}
-                onChangeText={setRate}
-              />
-
-              <Text style={styles.inputLabel}>Compounding Frequency</Text>
-              <View style={styles.freqRow}>
-                {frequencies.map((f) => (
-                  <Pressable
-                    key={f.key}
-                    style={[
-                      styles.freqChip,
-                      frequency === f.key && styles.freqChipActive,
-                    ]}
-                    onPress={() => setFrequency(f.key)}
-                  >
-                    <Text
-                      style={[
-                        styles.freqChipText,
-                        frequency === f.key && styles.freqChipTextActive,
-                      ]}
-                    >
-                      {f.label}
-                    </Text>
-                  </Pressable>
-                ))}
+            <View
+              style={[styles.modalContent, { paddingBottom: insets.bottom + 20 }]}
+            >
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>New Savings</Text>
+                <Pressable
+                  onPress={() => {
+                    resetForm();
+                    setShowCreate(false);
+                  }}
+                >
+                  <Ionicons name="close" size={24} color={Colors.text} />
+                </Pressable>
               </View>
 
-              <Text style={styles.inputLabel}>Color</Text>
-              <View style={styles.colorRow}>
-                {WALLET_COLORS.map((c) => (
-                  <Pressable
-                    key={c}
-                    style={[
-                      styles.colorDot,
-                      { backgroundColor: c },
-                      selectedColor === c && styles.colorDotActive,
-                    ]}
-                    onPress={() => setSelectedColor(c)}
-                  >
-                    {selectedColor === c && (
-                      <Ionicons name="checkmark" size={16} color="#fff" />
-                    )}
-                  </Pressable>
-                ))}
-              </View>
-
-              <Text style={styles.inputLabel}>Icon</Text>
-              <View style={styles.iconRow}>
-                {WALLET_ICONS.map((icon) => (
-                  <Pressable
-                    key={icon}
-                    style={[
-                      styles.iconChip,
-                      selectedIcon === icon && {
-                        backgroundColor: selectedColor + "20",
-                        borderColor: selectedColor,
-                      },
-                    ]}
-                    onPress={() => setSelectedIcon(icon)}
-                  >
-                    <Ionicons
-                      name={icon as any}
-                      size={22}
-                      color={
-                        selectedIcon === icon
-                          ? selectedColor
-                          : Colors.textSecondary
-                      }
-                    />
-                  </Pressable>
-                ))}
-              </View>
-
-              <Pressable
-                style={[
-                  styles.createButton,
-                  !name.trim() && styles.createButtonDisabled,
-                ]}
-                onPress={handleCreate}
-                disabled={!name.trim()}
+              <KeyboardAwareScrollViewCompat
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                bottomOffset={modalKeyboardBottomOffset}
+                extraKeyboardSpace={modalKeyboardExtraSpace}
               >
-                <Text style={styles.createButtonText}>Create Wallet</Text>
-              </Pressable>
-            </ScrollView>
-          </View>
+                <Text style={styles.inputLabel}>Bank / E-wallet</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="e.g. BPI / GCash"
+                  placeholderTextColor={Colors.textTertiary}
+                  value={name}
+                  onChangeText={setName}
+                />
+
+                <Text style={styles.inputLabel}>Starting Balance</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="0.00"
+                  placeholderTextColor={Colors.textTertiary}
+                  keyboardType="decimal-pad"
+                  value={balance}
+                  onChangeText={setBalance}
+                />
+
+                <Text style={styles.inputLabel}>Annual Interest Rate (%)</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="5.0"
+                  placeholderTextColor={Colors.textTertiary}
+                  keyboardType="decimal-pad"
+                  value={rate}
+                  onChangeText={setRate}
+                />
+
+                <Text style={styles.inputLabel}>Compounding Frequency</Text>
+                <View style={styles.freqRow}>
+                  {frequencies.map((f) => (
+                    <Pressable
+                      key={f.key}
+                      style={[
+                        styles.freqChip,
+                        frequency === f.key && styles.freqChipActive,
+                      ]}
+                      onPress={() => setFrequency(f.key)}
+                    >
+                      <Text
+                        style={[
+                          styles.freqChipText,
+                          frequency === f.key && styles.freqChipTextActive,
+                        ]}
+                      >
+                        {f.label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+
+                <Text style={styles.inputLabel}>Color</Text>
+                <View style={styles.colorRow}>
+                  {WALLET_COLORS.map((c) => (
+                    <Pressable
+                      key={c}
+                      style={[
+                        styles.colorDot,
+                        { backgroundColor: c },
+                        selectedColor === c && styles.colorDotActive,
+                      ]}
+                      onPress={() => setSelectedColor(c)}
+                    >
+                      {selectedColor === c && (
+                        <Ionicons name="checkmark" size={16} color="#fff" />
+                      )}
+                    </Pressable>
+                  ))}
+                </View>
+
+                <Text style={styles.inputLabel}>Icon</Text>
+                <View style={styles.iconRow}>
+                  {WALLET_ICONS.map((icon) => (
+                    <Pressable
+                      key={icon}
+                      style={[
+                        styles.iconChip,
+                        selectedIcon === icon && {
+                          backgroundColor: selectedColor + "20",
+                          borderColor: selectedColor,
+                        },
+                      ]}
+                      onPress={() => setSelectedIcon(icon)}
+                    >
+                      <Ionicons
+                        name={icon as any}
+                        size={22}
+                        color={
+                          selectedIcon === icon
+                            ? selectedColor
+                            : Colors.textSecondary
+                        }
+                      />
+                    </Pressable>
+                  ))}
+                </View>
+
+                <Pressable
+                  style={[
+                    styles.createButton,
+                    (!name.trim() || !isOnline || isSaving) &&
+                      styles.createButtonDisabled,
+                  ]}
+                  onPress={handleCreate}
+                  disabled={!name.trim() || !isOnline || isSaving}
+                >
+                  <Text style={styles.createButtonText}>
+                    {isSaving ? "Saving..." : "Create Wallet"}
+                  </Text>
+                </Pressable>
+              </KeyboardAwareScrollViewCompat>
+            </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
     </View>
@@ -340,6 +405,9 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     alignItems: "center",
     justifyContent: "center",
+  },
+  addButtonDisabled: {
+    opacity: 0.5,
   },
   walletCard: {
     backgroundColor: Colors.surface,
@@ -426,6 +494,10 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  modalKeyboard: {
+    flex: 1,
     justifyContent: "flex-end",
   },
   modalContent: {
@@ -540,3 +612,4 @@ const styles = StyleSheet.create({
     color: "#fff",
   },
 });
+

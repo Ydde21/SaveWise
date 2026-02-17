@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
+import { captureError } from "@/lib/monitoring";
 
 export type ErrorFallbackProps = {
   error: Error;
@@ -38,7 +39,10 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
     try {
       await reloadAppAsync();
     } catch (restartError) {
-      console.error("Failed to restart app:", restartError);
+      captureError(restartError, {
+        scope: "runtime",
+        operation: "reload_app",
+      });
       resetError();
     }
   };

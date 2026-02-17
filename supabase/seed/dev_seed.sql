@@ -1,0 +1,21 @@
+-- Optional development helpers
+-- Use this script only in local development.
+
+-- Example: mark a test account as premium (replace user UUID)
+-- insert into public.subscriptions (
+--   user_id,
+--   plan,
+--   status,
+--   source,
+--   started_at,
+--   expires_at,
+--   lifetime
+-- ) values (
+--   '00000000-0000-0000-0000-000000000000',
+--   'monthly',
+--   'active',
+--   'stub',
+--   now(),
+--   now() + interval '30 days',
+--   false
+-- );

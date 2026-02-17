@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo } from "react";
 import { View, Text, StyleSheet } from "react-native";
 import Svg, {
   Path,
@@ -18,7 +18,7 @@ interface ProjectionChartProps {
   currencySymbol: string;
 }
 
-export function ProjectionChart({
+export const ProjectionChart = memo(function ProjectionChart({
   data,
   width,
   height,
@@ -31,7 +31,7 @@ export function ProjectionChart({
       </View>
     );
 
-  const padding = { top: 20, right: 16, bottom: 32, left: 56 };
+  const padding = { top: 20, right: 20, bottom: 32, left: 56 };
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
 
@@ -100,6 +100,8 @@ export function ProjectionChart({
         {Array.from({ length: numXLabels }).map((_, i) => {
           const idx = i * xStep;
           const month = data[idx]?.month ?? 0;
+          const isFirst = i === 0;
+          const isLast = i === numXLabels - 1;
           return (
             <SvgText
               key={`x-${i}`}
@@ -107,7 +109,7 @@ export function ProjectionChart({
               y={height - 8}
               fill={Colors.textTertiary}
               fontSize={10}
-              textAnchor="middle"
+              textAnchor={isFirst ? "start" : isLast ? "end" : "middle"}
             >
               {month === 0 ? "Now" : `${month}mo`}
             </SvgText>
@@ -126,7 +128,7 @@ export function ProjectionChart({
       </Svg>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {

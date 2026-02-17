@@ -3,6 +3,8 @@ import {
   StyleSheet,
   Text,
   View,
+  FlatList,
+  KeyboardAvoidingView,
   ScrollView,
   Pressable,
   TextInput,
@@ -13,6 +15,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
+import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { useApp } from "@/lib/context";
 import { formatFullCurrency } from "@/lib/interest";
 import { WALLET_COLORS, GOAL_ICONS } from "@/lib/storage";
@@ -20,9 +23,19 @@ import Colors from "@/constants/colors";
 
 export default function GoalsScreen() {
   const insets = useSafeAreaInsets();
-  const { goals, wallets, currencySymbol, addGoal, editGoal, removeGoal } =
+  const { goals, wallets, currencySymbol, addGoal, editGoal, removeGoal, isOnline } =
     useApp();
   const [showCreate, setShowCreate] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isAddingAmount, setIsAddingAmount] = useState(false);
+  const [activeGoalForAdd, setActiveGoalForAdd] = useState<{
+    id: string;
+    currentAmount: number;
+    name: string;
+  } | null>(null);
+  const [addAmount, setAddAmount] = useState("");
   const [name, setName] = useState("");
   const [target, setTarget] = useState("");
   const [current, setCurrent] = useState("");
@@ -31,8 +44,11 @@ export default function GoalsScreen() {
   const [selectedIcon, setSelectedIcon] = useState(GOAL_ICONS[0]);
   const [selectedWalletId, setSelectedWalletId] = useState<string | null>(null);
   const webTopInset = Platform.OS === "web" ? 67 : 0;
+  const modalKeyboardBottomOffset = insets.bottom + 24;
+  const modalKeyboardExtraSpace = 12;
 
   const resetForm = useCallback(() => {
+    setEditingGoalId(null);
     setName("");
     setTarget("");
     setCurrent("");
@@ -42,33 +58,99 @@ export default function GoalsScreen() {
     setSelectedWalletId(null);
   }, []);
 
+  const resetAddAmountForm = useCallback(() => {
+    setAddAmount("");
+    setActiveGoalForAdd(null);
+    setShowAddModal(false);
+    setIsAddingAmount(false);
+  }, []);
+
+  const openEditGoal = useCallback((goalId: string) => {
+    const goal = goals.find((item) => item.id === goalId);
+    if (!goal) return;
+    setEditingGoalId(goal.id);
+    setName(goal.name);
+    setTarget(String(goal.targetAmount));
+    setCurrent(String(goal.currentAmount));
+    setDeadline(goal.deadline.slice(0, 10));
+    setSelectedColor(goal.color);
+    setSelectedIcon(goal.icon);
+    setSelectedWalletId(goal.walletId);
+    setShowCreate(true);
+  }, [goals]);
+
   const handleCreate = useCallback(async () => {
-    if (!name.trim() || !target) return;
+    if (!name.trim() || !target || !isOnline || isSaving) return;
     const deadlineDate = deadline.trim()
       ? new Date(deadline.trim()).toISOString()
       : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
 
-    await addGoal({
-      name: name.trim(),
-      targetAmount: parseFloat(target) || 0,
-      currentAmount: parseFloat(current) || 0,
-      deadline: deadlineDate,
-      walletId: selectedWalletId,
-      icon: selectedIcon,
-      color: selectedColor,
-    });
-    if (Platform.OS !== "web") {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    try {
+      setIsSaving(true);
+      if (editingGoalId) {
+        await editGoal(editingGoalId, {
+          name: name.trim(),
+          targetAmount: parseFloat(target) || 0,
+          currentAmount: parseFloat(current) || 0,
+          deadline: deadlineDate,
+          walletId: selectedWalletId,
+          icon: selectedIcon,
+          color: selectedColor,
+        });
+      } else {
+        await addGoal({
+          name: name.trim(),
+          targetAmount: parseFloat(target) || 0,
+          currentAmount: parseFloat(current) || 0,
+          deadline: deadlineDate,
+          walletId: selectedWalletId,
+          icon: selectedIcon,
+          color: selectedColor,
+        });
+      }
+
+      if (Platform.OS !== "web") {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+      resetForm();
+      setShowCreate(false);
+    } catch (error) {
+      Alert.alert(
+        "Unable to Save Goal",
+        error instanceof Error ? error.message : "Please try again."
+      );
+    } finally {
+      setIsSaving(false);
     }
-    resetForm();
-    setShowCreate(false);
-  }, [name, target, current, deadline, selectedColor, selectedIcon, selectedWalletId, addGoal, resetForm]);
+  }, [
+    name,
+    target,
+    current,
+    deadline,
+    selectedColor,
+    selectedIcon,
+    selectedWalletId,
+    addGoal,
+    editGoal,
+    editingGoalId,
+    resetForm,
+    isOnline,
+    isSaving,
+  ]);
 
   const handleDelete = useCallback(
     (id: string, goalName: string) => {
+      if (!isOnline) return;
+      const action = async () => {
+        try {
+          await removeGoal(id);
+        } catch (error) {
+          console.error("Delete goal failed:", error);
+        }
+      };
       if (Platform.OS === "web") {
         if (confirm(`Delete "${goalName}"?`)) {
-          removeGoal(id);
+          action();
         }
         return;
       }
@@ -77,50 +159,50 @@ export default function GoalsScreen() {
         {
           text: "Delete",
           style: "destructive",
-          onPress: () => removeGoal(id),
+          onPress: () => action(),
         },
       ]);
     },
-    [removeGoal]
+    [removeGoal, isOnline]
   );
 
   const handleAddToGoal = useCallback(
-    async (goalId: string, goalCurrent: number) => {
-      if (Platform.OS === "web") {
-        const amount = prompt("Amount to add:");
-        if (amount) {
-          const val = parseFloat(amount);
-          if (!isNaN(val) && val > 0) {
-            await editGoal(goalId, { currentAmount: goalCurrent + val });
-          }
-        }
-        return;
-      }
-      Alert.prompt?.(
-        "Add to Goal",
-        "Enter the amount to add",
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Add",
-            onPress: async (text) => {
-              const val = parseFloat(text || "0");
-              if (val > 0) {
-                await editGoal(goalId, { currentAmount: goalCurrent + val });
-                Haptics.notificationAsync(
-                  Haptics.NotificationFeedbackType.Success
-                );
-              }
-            },
-          },
-        ],
-        "plain-text",
-        "",
-        "decimal-pad"
-      );
+    (goalId: string, goalCurrent: number, goalName: string) => {
+      if (!isOnline) return;
+      setActiveGoalForAdd({
+        id: goalId,
+        currentAmount: goalCurrent,
+        name: goalName,
+      });
+      setAddAmount("");
+      setShowAddModal(true);
     },
-    [editGoal]
+    [isOnline]
   );
+
+  const confirmAddToGoal = useCallback(async () => {
+    if (!activeGoalForAdd || isAddingAmount) return;
+    const val = parseFloat(addAmount);
+    if (Number.isNaN(val) || val <= 0) return;
+
+    try {
+      setIsAddingAmount(true);
+      await editGoal(activeGoalForAdd.id, {
+        currentAmount: activeGoalForAdd.currentAmount + val,
+      });
+      if (Platform.OS !== "web") {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+      resetAddAmountForm();
+    } catch (error) {
+      Alert.alert(
+        "Unable to Add Amount",
+        error instanceof Error ? error.message : "Please try again."
+      );
+    } finally {
+      setIsAddingAmount(false);
+    }
+  }, [activeGoalForAdd, addAmount, editGoal, isAddingAmount, resetAddAmountForm]);
 
   return (
     <View style={styles.container}>
@@ -137,8 +219,9 @@ export default function GoalsScreen() {
         <View style={styles.header}>
           <Text style={styles.title}>Goals</Text>
           <Pressable
-            style={styles.addButton}
+            style={[styles.addButton, !isOnline && styles.addButtonDisabled]}
             onPress={() => setShowCreate(true)}
+            disabled={!isOnline}
           >
             <Ionicons name="add" size={24} color="#fff" />
           </Pressable>
@@ -159,97 +242,111 @@ export default function GoalsScreen() {
             </Text>
           </View>
         ) : (
-          goals.map((goal) => {
-            const progress = goal.targetAmount > 0
-              ? Math.min(goal.currentAmount / goal.targetAmount, 1)
-              : 0;
-            const daysLeft = Math.max(
-              0,
-              Math.ceil(
-                (new Date(goal.deadline).getTime() - Date.now()) /
-                  (1000 * 60 * 60 * 24)
-              )
-            );
-            const isCompleted = progress >= 1;
+          <FlatList
+            data={goals}
+            keyExtractor={(goal) => goal.id}
+            scrollEnabled={false}
+            initialNumToRender={20}
+            windowSize={7}
+            renderItem={({ item: goal }) => {
+              const progress = goal.targetAmount > 0
+                ? Math.min(goal.currentAmount / goal.targetAmount, 1)
+                : 0;
+              const daysLeft = Math.max(
+                0,
+                Math.ceil(
+                  (new Date(goal.deadline).getTime() - Date.now()) /
+                    (1000 * 60 * 60 * 24)
+                )
+              );
+              const isCompleted = progress >= 1;
 
-            return (
-              <Pressable
-                key={goal.id}
-                style={styles.goalCard}
-                onLongPress={() => handleDelete(goal.id, goal.name)}
-              >
-                <View style={styles.goalCardHeader}>
-                  <View
-                    style={[
-                      styles.goalIconContainer,
-                      { backgroundColor: goal.color + "20" },
-                    ]}
-                  >
-                    <Ionicons
-                      name={goal.icon as any}
-                      size={22}
-                      color={goal.color}
-                    />
-                  </View>
-                  <View style={styles.goalMeta}>
-                    <Text style={styles.goalName}>{goal.name}</Text>
-                    <Text style={styles.goalDeadline}>
-                      {isCompleted
-                        ? "Completed!"
-                        : `${daysLeft} days remaining`}
-                    </Text>
-                  </View>
-                  {!isCompleted && (
-                    <Pressable
-                      style={[
-                        styles.goalAddButton,
-                        { backgroundColor: goal.color + "15" },
-                      ]}
-                      onPress={() =>
-                        handleAddToGoal(goal.id, goal.currentAmount)
-                      }
-                    >
-                      <Ionicons name="add" size={18} color={goal.color} />
-                    </Pressable>
-                  )}
-                </View>
-
-                <View style={styles.goalProgress}>
-                  <View style={styles.goalProgressBar}>
+              return (
+                <Pressable
+                  style={styles.goalCard}
+                  onLongPress={isOnline ? () => handleDelete(goal.id, goal.name) : undefined}
+                >
+                  <View style={styles.goalCardHeader}>
                     <View
                       style={[
-                        styles.goalProgressFill,
+                        styles.goalIconContainer,
+                        { backgroundColor: goal.color + "20" },
+                      ]}
+                    >
+                      <Ionicons
+                        name={goal.icon as any}
+                        size={22}
+                        color={goal.color}
+                      />
+                    </View>
+                    <View style={styles.goalMeta}>
+                      <Text style={styles.goalName}>{goal.name}</Text>
+                      <Text style={styles.goalDeadline}>
+                        {isCompleted
+                          ? "Completed!"
+                          : `${daysLeft} days remaining`}
+                      </Text>
+                    </View>
+                    <View style={styles.goalActions}>
+                      <Pressable
+                        style={styles.goalEditButton}
+                        onPress={() => openEditGoal(goal.id)}
+                      >
+                        <Ionicons name="create-outline" size={16} color={Colors.textSecondary} />
+                      </Pressable>
+                      {!isCompleted && (
+                        <Pressable
+                          style={[
+                            styles.goalAddButton,
+                            { backgroundColor: goal.color + "15" },
+                          ]}
+                          onPress={() =>
+                            handleAddToGoal(goal.id, goal.currentAmount, goal.name)
+                          }
+                        >
+                          <Ionicons name="add" size={18} color={goal.color} />
+                        </Pressable>
+                      )}
+                    </View>
+                  </View>
+
+                  <View style={styles.goalProgress}>
+                    <View style={styles.goalProgressBar}>
+                      <View
+                        style={[
+                          styles.goalProgressFill,
+                          {
+                            width: `${progress * 100}%`,
+                            backgroundColor: isCompleted
+                              ? Colors.success
+                              : goal.color,
+                          },
+                        ]}
+                      />
+                    </View>
+                    <View style={styles.goalAmounts}>
+                      <Text style={styles.goalCurrentAmount}>
+                        {formatFullCurrency(goal.currentAmount, currencySymbol)}
+                      </Text>
+                      <Text style={styles.goalTargetAmount}>
+                        {formatFullCurrency(goal.targetAmount, currencySymbol)}
+                      </Text>
+                    </View>
+                    <Text
+                      style={[
+                        styles.goalPercentage,
                         {
-                          width: `${progress * 100}%`,
-                          backgroundColor: isCompleted
-                            ? Colors.success
-                            : goal.color,
+                          color: isCompleted ? Colors.success : goal.color,
                         },
                       ]}
-                    />
-                  </View>
-                  <View style={styles.goalAmounts}>
-                    <Text style={styles.goalCurrentAmount}>
-                      {formatFullCurrency(goal.currentAmount, currencySymbol)}
-                    </Text>
-                    <Text style={styles.goalTargetAmount}>
-                      {formatFullCurrency(goal.targetAmount, currencySymbol)}
+                    >
+                      {Math.round(progress * 100)}%
                     </Text>
                   </View>
-                  <Text
-                    style={[
-                      styles.goalPercentage,
-                      {
-                        color: isCompleted ? Colors.success : goal.color,
-                      },
-                    ]}
-                  >
-                    {Math.round(progress * 100)}%
-                  </Text>
-                </View>
-              </Pressable>
-            );
-          })
+                </Pressable>
+              );
+            }}
+          />
         )}
       </ScrollView>
 
@@ -260,167 +357,237 @@ export default function GoalsScreen() {
         onRequestClose={() => setShowCreate(false)}
       >
         <View style={styles.modalOverlay}>
-          <View
-            style={[
-              styles.modalContent,
-              { paddingBottom: insets.bottom + 20 },
-            ]}
+          <KeyboardAvoidingView
+            style={styles.modalKeyboard}
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
           >
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>New Goal</Text>
-              <Pressable onPress={() => { resetForm(); setShowCreate(false); }}>
-                <Ionicons name="close" size={24} color={Colors.text} />
-              </Pressable>
-            </View>
+            <View
+              style={[
+                styles.modalContent,
+                { paddingBottom: insets.bottom + 20 },
+              ]}
+            >
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>
+                  {editingGoalId ? "Edit Goal" : "New Goal"}
+                </Text>
+                <Pressable onPress={() => { resetForm(); setShowCreate(false); }}>
+                  <Ionicons name="close" size={24} color={Colors.text} />
+                </Pressable>
+              </View>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={styles.inputLabel}>Goal Name</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. Vacation Fund"
-                placeholderTextColor={Colors.textTertiary}
-                value={name}
-                onChangeText={setName}
-              />
+              <KeyboardAwareScrollViewCompat
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                bottomOffset={modalKeyboardBottomOffset}
+                extraKeyboardSpace={modalKeyboardExtraSpace}
+              >
+                <Text style={styles.inputLabel}>Goal Name</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="e.g. Vacation Fund"
+                  placeholderTextColor={Colors.textTertiary}
+                  value={name}
+                  onChangeText={setName}
+                />
 
-              <Text style={styles.inputLabel}>Target Amount</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="10000.00"
-                placeholderTextColor={Colors.textTertiary}
-                keyboardType="decimal-pad"
-                value={target}
-                onChangeText={setTarget}
-              />
+                <Text style={styles.inputLabel}>Target Amount</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="10000.00"
+                  placeholderTextColor={Colors.textTertiary}
+                  keyboardType="decimal-pad"
+                  value={target}
+                  onChangeText={setTarget}
+                />
 
-              <Text style={styles.inputLabel}>Current Savings</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="0.00"
-                placeholderTextColor={Colors.textTertiary}
-                keyboardType="decimal-pad"
-                value={current}
-                onChangeText={setCurrent}
-              />
+                <Text style={styles.inputLabel}>Current Savings</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="0.00"
+                  placeholderTextColor={Colors.textTertiary}
+                  keyboardType="decimal-pad"
+                  value={current}
+                  onChangeText={setCurrent}
+                />
 
-              <Text style={styles.inputLabel}>
-                Deadline (YYYY-MM-DD)
-              </Text>
-              <TextInput
-                style={styles.input}
-                placeholder="2027-01-01"
-                placeholderTextColor={Colors.textTertiary}
-                value={deadline}
-                onChangeText={setDeadline}
-              />
+                <Text style={styles.inputLabel}>
+                  Deadline (YYYY-MM-DD)
+                </Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="2027-01-01"
+                  placeholderTextColor={Colors.textTertiary}
+                  value={deadline}
+                  onChangeText={setDeadline}
+                />
 
-              {wallets.length > 0 && (
-                <>
-                  <Text style={styles.inputLabel}>Link to Wallet (optional)</Text>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    style={styles.walletSelector}
-                  >
-                    <Pressable
-                      style={[
-                        styles.walletChip,
-                        selectedWalletId === null && styles.walletChipActive,
-                      ]}
-                      onPress={() => setSelectedWalletId(null)}
+                {wallets.length > 0 && (
+                  <>
+                    <Text style={styles.inputLabel}>Link to Wallet (optional)</Text>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      style={styles.walletSelector}
                     >
-                      <Text
-                        style={[
-                          styles.walletChipText,
-                          selectedWalletId === null &&
-                            styles.walletChipTextActive,
-                        ]}
-                      >
-                        None
-                      </Text>
-                    </Pressable>
-                    {wallets.map((w) => (
                       <Pressable
-                        key={w.id}
                         style={[
                           styles.walletChip,
-                          selectedWalletId === w.id && styles.walletChipActive,
+                          selectedWalletId === null && styles.walletChipActive,
                         ]}
-                        onPress={() => setSelectedWalletId(w.id)}
+                        onPress={() => setSelectedWalletId(null)}
                       >
                         <Text
                           style={[
                             styles.walletChipText,
-                            selectedWalletId === w.id &&
+                            selectedWalletId === null &&
                               styles.walletChipTextActive,
                           ]}
                         >
-                          {w.name}
+                          None
                         </Text>
                       </Pressable>
-                    ))}
-                  </ScrollView>
-                </>
-              )}
+                      {wallets.map((w) => (
+                        <Pressable
+                          key={w.id}
+                          style={[
+                            styles.walletChip,
+                            selectedWalletId === w.id && styles.walletChipActive,
+                          ]}
+                          onPress={() => setSelectedWalletId(w.id)}
+                        >
+                          <Text
+                            style={[
+                              styles.walletChipText,
+                              selectedWalletId === w.id &&
+                                styles.walletChipTextActive,
+                            ]}
+                          >
+                            {w.name}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </ScrollView>
+                  </>
+                )}
 
-              <Text style={styles.inputLabel}>Color</Text>
-              <View style={styles.colorRow}>
-                {WALLET_COLORS.map((c) => (
-                  <Pressable
-                    key={c}
-                    style={[
-                      styles.colorDot,
-                      { backgroundColor: c },
-                      selectedColor === c && styles.colorDotActive,
-                    ]}
-                    onPress={() => setSelectedColor(c)}
-                  >
-                    {selectedColor === c && (
-                      <Ionicons name="checkmark" size={16} color="#fff" />
-                    )}
-                  </Pressable>
-                ))}
+                <Text style={styles.inputLabel}>Color</Text>
+                <View style={styles.colorRow}>
+                  {WALLET_COLORS.map((c) => (
+                    <Pressable
+                      key={c}
+                      style={[
+                        styles.colorDot,
+                        { backgroundColor: c },
+                        selectedColor === c && styles.colorDotActive,
+                      ]}
+                      onPress={() => setSelectedColor(c)}
+                    >
+                      {selectedColor === c && (
+                        <Ionicons name="checkmark" size={16} color="#fff" />
+                      )}
+                    </Pressable>
+                  ))}
+                </View>
+
+                <Text style={styles.inputLabel}>Icon</Text>
+                <View style={styles.iconRow}>
+                  {GOAL_ICONS.map((icon) => (
+                    <Pressable
+                      key={icon}
+                      style={[
+                        styles.iconChip,
+                        selectedIcon === icon && {
+                          backgroundColor: selectedColor + "20",
+                          borderColor: selectedColor,
+                        },
+                      ]}
+                      onPress={() => setSelectedIcon(icon)}
+                    >
+                      <Ionicons
+                        name={icon as any}
+                        size={22}
+                        color={
+                          selectedIcon === icon
+                            ? selectedColor
+                            : Colors.textSecondary
+                        }
+                      />
+                    </Pressable>
+                  ))}
+                </View>
+
+                <Pressable
+                  style={[
+                    styles.createButton,
+                    (!name.trim() || !target || !isOnline || isSaving) && styles.createButtonDisabled,
+                  ]}
+                  onPress={handleCreate}
+                  disabled={!name.trim() || !target || !isOnline || isSaving}
+                >
+                  <Text style={styles.createButtonText}>
+                    {isSaving ? "Saving..." : editingGoalId ? "Save Goal" : "Create Goal"}
+                  </Text>
+                </Pressable>
+              </KeyboardAwareScrollViewCompat>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showAddModal}
+        animationType="slide"
+        transparent
+        onRequestClose={resetAddAmountForm}
+      >
+        <View style={styles.modalOverlay}>
+          <KeyboardAvoidingView
+            style={styles.modalKeyboard}
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+          >
+            <View style={[styles.modalContent, { paddingBottom: insets.bottom + 20 }]}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Add to Goal</Text>
+                <Pressable onPress={resetAddAmountForm}>
+                  <Ionicons name="close" size={24} color={Colors.text} />
+                </Pressable>
               </View>
 
-              <Text style={styles.inputLabel}>Icon</Text>
-              <View style={styles.iconRow}>
-                {GOAL_ICONS.map((icon) => (
-                  <Pressable
-                    key={icon}
-                    style={[
-                      styles.iconChip,
-                      selectedIcon === icon && {
-                        backgroundColor: selectedColor + "20",
-                        borderColor: selectedColor,
-                      },
-                    ]}
-                    onPress={() => setSelectedIcon(icon)}
-                  >
-                    <Ionicons
-                      name={icon as any}
-                      size={22}
-                      color={
-                        selectedIcon === icon
-                          ? selectedColor
-                          : Colors.textSecondary
-                      }
-                    />
-                  </Pressable>
-                ))}
-              </View>
-
-              <Pressable
-                style={[
-                  styles.createButton,
-                  (!name.trim() || !target) && styles.createButtonDisabled,
-                ]}
-                onPress={handleCreate}
-                disabled={!name.trim() || !target}
+              <KeyboardAwareScrollViewCompat
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                bottomOffset={modalKeyboardBottomOffset}
+                extraKeyboardSpace={modalKeyboardExtraSpace}
               >
-                <Text style={styles.createButtonText}>Create Goal</Text>
-              </Pressable>
-            </ScrollView>
-          </View>
+                <Text style={styles.inputLabel}>
+                  {activeGoalForAdd ? activeGoalForAdd.name : "Goal"}
+                </Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Amount to add"
+                  placeholderTextColor={Colors.textTertiary}
+                  keyboardType="decimal-pad"
+                  value={addAmount}
+                  onChangeText={setAddAmount}
+                />
+
+                <Pressable
+                  style={[
+                    styles.createButton,
+                    (!addAmount.trim() || isAddingAmount || !isOnline) &&
+                      styles.createButtonDisabled,
+                  ]}
+                  onPress={confirmAddToGoal}
+                  disabled={!addAmount.trim() || isAddingAmount || !isOnline}
+                >
+                  <Text style={styles.createButtonText}>
+                    {isAddingAmount ? "Adding..." : "Add Amount"}
+                  </Text>
+                </Pressable>
+              </KeyboardAwareScrollViewCompat>
+            </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
     </View>
@@ -453,6 +620,9 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     alignItems: "center",
     justifyContent: "center",
+  },
+  addButtonDisabled: {
+    opacity: 0.5,
   },
   goalCard: {
     backgroundColor: Colors.surface,
@@ -498,6 +668,19 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
+  },
+  goalActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  goalEditButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: Colors.borderLight,
   },
   goalProgress: {
     gap: 8,
@@ -561,6 +744,10 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  modalKeyboard: {
+    flex: 1,
     justifyContent: "flex-end",
   },
   modalContent: {
@@ -674,3 +861,4 @@ const styles = StyleSheet.create({
     color: "#fff",
   },
 });
+
