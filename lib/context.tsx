@@ -67,7 +67,12 @@ import type {
   Transaction,
   Wallet,
 } from "@/lib/types";
-import { beginLoadGuard, isLoadGuardActive } from "@/lib/load-guards";
+import {
+  beginLoadGuard,
+  beginScopedLoadGuard,
+  isLoadGuardActive,
+  isScopedLoadGuardActive,
+} from "@/lib/load-guards";
 
 interface AppContextValue {
   session: Session | null;
@@ -225,6 +230,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const isRefreshingRef = useRef(false);
   const queuedRefreshRef = useRef(false);
   const activeLoadIdRef = useRef(0);
+  const tableLoadIdsRef = useRef<
+    Record<
+      | "wallets"
+      | "transactions"
+      | "goals"
+      | "expenses"
+      | "incomes"
+      | "loans"
+      | "loanPayments"
+      | "subscriptions",
+      number
+    >
+  >({
+    wallets: 0,
+    transactions: 0,
+    goals: 0,
+    expenses: 0,
+    incomes: 0,
+    loans: 0,
+    loanPayments: 0,
+    subscriptions: 0,
+  });
   const userIdRef = useRef<string | null>(null);
 
   userIdRef.current = user?.id ?? null;
@@ -319,72 +346,72 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const refreshWallets = useCallback(async (expectedUserId?: string) => {
     const userIdAtStart = expectedUserId ?? userIdRef.current;
     if (!userIdAtStart) return;
-    const guard = beginLoadGuard(activeLoadIdRef, userIdAtStart);
+    const guard = beginScopedLoadGuard(tableLoadIdsRef, "wallets", userIdAtStart);
     const data = await walletRepository.list({ limit: 200 });
-    if (!isLoadGuardActive(activeLoadIdRef, userIdRef.current, guard)) return;
+    if (!isScopedLoadGuardActive(tableLoadIdsRef, "wallets", userIdRef.current, guard)) return;
     setWallets((prev) => (areEntityListsEqual(prev, data) ? prev : data));
   }, []);
 
   const refreshTransactions = useCallback(async (expectedUserId?: string) => {
     const userIdAtStart = expectedUserId ?? userIdRef.current;
     if (!userIdAtStart) return;
-    const guard = beginLoadGuard(activeLoadIdRef, userIdAtStart);
+    const guard = beginScopedLoadGuard(tableLoadIdsRef, "transactions", userIdAtStart);
     const data = await transactionRepository.list({ limit: 400 });
-    if (!isLoadGuardActive(activeLoadIdRef, userIdRef.current, guard)) return;
+    if (!isScopedLoadGuardActive(tableLoadIdsRef, "transactions", userIdRef.current, guard)) return;
     setTransactions((prev) => (areEntityListsEqual(prev, data) ? prev : data));
   }, []);
 
   const refreshGoals = useCallback(async (expectedUserId?: string) => {
     const userIdAtStart = expectedUserId ?? userIdRef.current;
     if (!userIdAtStart) return;
-    const guard = beginLoadGuard(activeLoadIdRef, userIdAtStart);
+    const guard = beginScopedLoadGuard(tableLoadIdsRef, "goals", userIdAtStart);
     const data = await goalRepository.list({ limit: 200 });
-    if (!isLoadGuardActive(activeLoadIdRef, userIdRef.current, guard)) return;
+    if (!isScopedLoadGuardActive(tableLoadIdsRef, "goals", userIdRef.current, guard)) return;
     setGoals((prev) => (areEntityListsEqual(prev, data) ? prev : data));
   }, []);
 
   const refreshExpenses = useCallback(async (expectedUserId?: string) => {
     const userIdAtStart = expectedUserId ?? userIdRef.current;
     if (!userIdAtStart) return;
-    const guard = beginLoadGuard(activeLoadIdRef, userIdAtStart);
+    const guard = beginScopedLoadGuard(tableLoadIdsRef, "expenses", userIdAtStart);
     const data = await expenseRepository.list({ limit: 500 });
-    if (!isLoadGuardActive(activeLoadIdRef, userIdRef.current, guard)) return;
+    if (!isScopedLoadGuardActive(tableLoadIdsRef, "expenses", userIdRef.current, guard)) return;
     setExpenseEntries((prev) => (areEntityListsEqual(prev, data) ? prev : data));
   }, []);
 
   const refreshIncomes = useCallback(async (expectedUserId?: string) => {
     const userIdAtStart = expectedUserId ?? userIdRef.current;
     if (!userIdAtStart) return;
-    const guard = beginLoadGuard(activeLoadIdRef, userIdAtStart);
+    const guard = beginScopedLoadGuard(tableLoadIdsRef, "incomes", userIdAtStart);
     const data = await incomeRepository.list({ limit: 500 });
-    if (!isLoadGuardActive(activeLoadIdRef, userIdRef.current, guard)) return;
+    if (!isScopedLoadGuardActive(tableLoadIdsRef, "incomes", userIdRef.current, guard)) return;
     setIncomes((prev) => (areEntityListsEqual(prev, data) ? prev : data));
   }, []);
 
   const refreshLoans = useCallback(async (expectedUserId?: string) => {
     const userIdAtStart = expectedUserId ?? userIdRef.current;
     if (!userIdAtStart) return;
-    const guard = beginLoadGuard(activeLoadIdRef, userIdAtStart);
+    const guard = beginScopedLoadGuard(tableLoadIdsRef, "loans", userIdAtStart);
     const data = await loanRepository.list({ limit: 200 });
-    if (!isLoadGuardActive(activeLoadIdRef, userIdRef.current, guard)) return;
+    if (!isScopedLoadGuardActive(tableLoadIdsRef, "loans", userIdRef.current, guard)) return;
     setLoans((prev) => (areEntityListsEqual(prev, data) ? prev : data));
   }, []);
 
   const refreshLoanPayments = useCallback(async (expectedUserId?: string) => {
     const userIdAtStart = expectedUserId ?? userIdRef.current;
     if (!userIdAtStart) return;
-    const guard = beginLoadGuard(activeLoadIdRef, userIdAtStart);
+    const guard = beginScopedLoadGuard(tableLoadIdsRef, "loanPayments", userIdAtStart);
     const data = await loanPaymentRepository.list({ limit: 500 });
-    if (!isLoadGuardActive(activeLoadIdRef, userIdRef.current, guard)) return;
+    if (!isScopedLoadGuardActive(tableLoadIdsRef, "loanPayments", userIdRef.current, guard)) return;
     setLoanPayments((prev) => (areEntityListsEqual(prev, data) ? prev : data));
   }, []);
 
   const refreshSubscriptions = useCallback(async (expectedUserId?: string) => {
     const userIdAtStart = expectedUserId ?? userIdRef.current;
     if (!userIdAtStart) return;
-    const guard = beginLoadGuard(activeLoadIdRef, userIdAtStart);
+    const guard = beginScopedLoadGuard(tableLoadIdsRef, "subscriptions", userIdAtStart);
     const data = await subscriptionRepository.list({ limit: 100 });
-    if (!isLoadGuardActive(activeLoadIdRef, userIdRef.current, guard)) return;
+    if (!isScopedLoadGuardActive(tableLoadIdsRef, "subscriptions", userIdRef.current, guard)) return;
     setSubscriptions((prev) => (areEntityListsEqual(prev, data) ? prev : data));
   }, []);
 
