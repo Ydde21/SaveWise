@@ -155,7 +155,83 @@ interface AppContextValue {
   completeOnboarding: () => Promise<void>;
 }
 
-const AppContext = createContext<AppContextValue | null>(null);
+interface AuthContextValue {
+  session: Session | null;
+  user: User | null;
+  isAuthenticated: boolean;
+  hasOnboarded: boolean;
+  isLoading: boolean;
+}
+
+interface NetworkContextValue {
+  isOnline: boolean;
+}
+
+interface PreferencesContextValue {
+  currency: string;
+  currencySymbol: string;
+}
+
+interface SubscriptionContextValue {
+  subscriptions: Subscription[];
+  isPremium: boolean;
+}
+
+interface FinanceMetricsContextValue {
+  totalBalance: number;
+  dashboardSummary: DashboardSummary;
+  freePlanStatus: FreePlanStatus;
+}
+
+interface ActionsContextValue {
+  refreshData: () => Promise<void>;
+  signIn: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string) => Promise<void>;
+  signOut: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
+  addWallet: AppContextValue["addWallet"];
+  editWallet: AppContextValue["editWallet"];
+  removeWallet: AppContextValue["removeWallet"];
+  addTransaction: AppContextValue["addTransaction"];
+  removeTransaction: AppContextValue["removeTransaction"];
+  addGoal: AppContextValue["addGoal"];
+  editGoal: AppContextValue["editGoal"];
+  removeGoal: AppContextValue["removeGoal"];
+  addExpense: AppContextValue["addExpense"];
+  editExpense: AppContextValue["editExpense"];
+  removeExpense: AppContextValue["removeExpense"];
+  markRecurringExpensePaid: AppContextValue["markRecurringExpensePaid"];
+  markRecurringExpenseUnpaid: AppContextValue["markRecurringExpenseUnpaid"];
+  addIncome: AppContextValue["addIncome"];
+  editIncome: AppContextValue["editIncome"];
+  removeIncome: AppContextValue["removeIncome"];
+  addLoan: AppContextValue["addLoan"];
+  editLoan: AppContextValue["editLoan"];
+  removeLoan: AppContextValue["removeLoan"];
+  addLoanPayment: AppContextValue["addLoanPayment"];
+  removeLoanPayment: AppContextValue["removeLoanPayment"];
+  purchasePremium: (productId: string) => Promise<void>;
+  restorePremium: () => Promise<void>;
+  refreshPremiumStatus: () => Promise<void>;
+  exportPremiumCsv: () => Promise<string>;
+  setCurrency: (currency: string, symbol: string) => Promise<void>;
+  completeOnboarding: () => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextValue | null>(null);
+const NetworkContext = createContext<NetworkContextValue | null>(null);
+const PreferencesContext = createContext<PreferencesContextValue | null>(null);
+const WalletsContext = createContext<Wallet[] | null>(null);
+const TransactionsContext = createContext<Transaction[] | null>(null);
+const GoalsContext = createContext<SavingsGoal[] | null>(null);
+const ExpensesContext = createContext<Expense[] | null>(null);
+const RecurringExpensesContext = createContext<Expense[] | null>(null);
+const IncomesContext = createContext<Income[] | null>(null);
+const LoansContext = createContext<Loan[] | null>(null);
+const LoanPaymentsContext = createContext<LoanPayment[] | null>(null);
+const SubscriptionContext = createContext<SubscriptionContextValue | null>(null);
+const FinanceMetricsContext = createContext<FinanceMetricsContextValue | null>(null);
+const ActionsContext = createContext<ActionsContextValue | null>(null);
 
 function areFlatObjectsEqual(
   a: Record<string, unknown>,
@@ -1322,29 +1398,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setHasOnboarded(true);
   }, []);
 
-  const value = useMemo<AppContextValue>(
+  const authValue = useMemo<AuthContextValue>(
     () => ({
       session,
       user,
       isAuthenticated: Boolean(session?.user),
-      isPremium,
-      isOnline,
       hasOnboarded,
       isLoading,
-      currency,
-      currencySymbol,
-      wallets,
-      transactions,
-      goals,
-      expenses,
-      recurringExpenses,
-      incomes,
-      loans,
-      loanPayments,
-      subscriptions,
-      totalBalance,
-      dashboardSummary,
-      freePlanStatus,
+    }),
+    [session, user, hasOnboarded, isLoading]
+  );
+
+  const networkValue = useMemo<NetworkContextValue>(
+    () => ({ isOnline }),
+    [isOnline]
+  );
+
+  const preferencesValue = useMemo<PreferencesContextValue>(
+    () => ({ currency, currencySymbol }),
+    [currency, currencySymbol]
+  );
+
+  const subscriptionValue = useMemo<SubscriptionContextValue>(
+    () => ({ subscriptions, isPremium }),
+    [subscriptions, isPremium]
+  );
+
+  const financeMetricsValue = useMemo<FinanceMetricsContextValue>(
+    () => ({ totalBalance, dashboardSummary, freePlanStatus }),
+    [totalBalance, dashboardSummary, freePlanStatus]
+  );
+
+  const actionsValue = useMemo<ActionsContextValue>(
+    () => ({
       refreshData,
       signIn,
       signUp,
@@ -1379,26 +1465,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       completeOnboarding,
     }),
     [
-      session,
-      user,
-      isPremium,
-      isOnline,
-      hasOnboarded,
-      isLoading,
-      currency,
-      currencySymbol,
-      wallets,
-      transactions,
-      goals,
-      expenses,
-      recurringExpenses,
-      incomes,
-      loans,
-      loanPayments,
-      subscriptions,
-      totalBalance,
-      dashboardSummary,
-      freePlanStatus,
       refreshData,
       signIn,
       signUp,
@@ -1434,13 +1500,147 @@ export function AppProvider({ children }: { children: ReactNode }) {
     ]
   );
 
-  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
+  return (
+    <AuthContext.Provider value={authValue}>
+      <NetworkContext.Provider value={networkValue}>
+        <PreferencesContext.Provider value={preferencesValue}>
+          <WalletsContext.Provider value={wallets}>
+            <TransactionsContext.Provider value={transactions}>
+              <GoalsContext.Provider value={goals}>
+                <ExpensesContext.Provider value={expenses}>
+                  <RecurringExpensesContext.Provider value={recurringExpenses}>
+                    <IncomesContext.Provider value={incomes}>
+                      <LoansContext.Provider value={loans}>
+                        <LoanPaymentsContext.Provider value={loanPayments}>
+                          <SubscriptionContext.Provider value={subscriptionValue}>
+                            <FinanceMetricsContext.Provider value={financeMetricsValue}>
+                              <ActionsContext.Provider value={actionsValue}>
+                                {children}
+                              </ActionsContext.Provider>
+                            </FinanceMetricsContext.Provider>
+                          </SubscriptionContext.Provider>
+                        </LoanPaymentsContext.Provider>
+                      </LoansContext.Provider>
+                    </IncomesContext.Provider>
+                  </RecurringExpensesContext.Provider>
+                </ExpensesContext.Provider>
+              </GoalsContext.Provider>
+            </TransactionsContext.Provider>
+          </WalletsContext.Provider>
+        </PreferencesContext.Provider>
+      </NetworkContext.Provider>
+    </AuthContext.Provider>
+  );
 }
 
-export function useApp() {
-  const context = useContext(AppContext);
-  if (!context) {
-    throw new Error("useApp must be used inside AppProvider.");
+function useRequiredContext<T>(
+  context: React.Context<T | null>,
+  name: string
+): T {
+  const value = useContext(context);
+  if (!value) {
+    throw new Error(`${name} must be used inside AppProvider.`);
   }
-  return context;
+  return value;
+}
+
+export function useAuth() {
+  return useRequiredContext(AuthContext, "useAuth");
+}
+
+export function useNetwork() {
+  return useRequiredContext(NetworkContext, "useNetwork");
+}
+
+export function usePreferences() {
+  return useRequiredContext(PreferencesContext, "usePreferences");
+}
+
+export function useWallets() {
+  return useRequiredContext(WalletsContext, "useWallets");
+}
+
+export function useTransactions() {
+  return useRequiredContext(TransactionsContext, "useTransactions");
+}
+
+export function useGoals() {
+  return useRequiredContext(GoalsContext, "useGoals");
+}
+
+export function useExpenses() {
+  return useRequiredContext(ExpensesContext, "useExpenses");
+}
+
+export function useRecurringExpenses() {
+  return useRequiredContext(RecurringExpensesContext, "useRecurringExpenses");
+}
+
+export function useIncomes() {
+  return useRequiredContext(IncomesContext, "useIncomes");
+}
+
+export function useLoans() {
+  return useRequiredContext(LoansContext, "useLoans");
+}
+
+export function useLoanPayments() {
+  return useRequiredContext(LoanPaymentsContext, "useLoanPayments");
+}
+
+export function useSubscriptionState() {
+  return useRequiredContext(SubscriptionContext, "useSubscriptionState");
+}
+
+export function useFinanceMetrics() {
+  return useRequiredContext(FinanceMetricsContext, "useFinanceMetrics");
+}
+
+export function useActions() {
+  return useRequiredContext(ActionsContext, "useActions");
+}
+
+export function useWalletsSelector<T>(selector: (wallets: Wallet[]) => T): T {
+  return selector(useWallets());
+}
+
+export function useExpensesSelector<T>(selector: (expenses: Expense[]) => T): T {
+  return selector(useExpenses());
+}
+
+export function useApp(): AppContextValue {
+  const auth = useAuth();
+  const network = useNetwork();
+  const preferences = usePreferences();
+  const wallets = useWallets();
+  const transactions = useTransactions();
+  const goals = useGoals();
+  const expenses = useExpenses();
+  const recurringExpenses = useRecurringExpenses();
+  const incomes = useIncomes();
+  const loans = useLoans();
+  const loanPayments = useLoanPayments();
+  const { subscriptions, isPremium } = useSubscriptionState();
+  const { totalBalance, dashboardSummary, freePlanStatus } = useFinanceMetrics();
+  const actions = useActions();
+
+  return {
+    ...auth,
+    ...network,
+    ...preferences,
+    wallets,
+    transactions,
+    goals,
+    expenses,
+    recurringExpenses,
+    incomes,
+    loans,
+    loanPayments,
+    subscriptions,
+    isPremium,
+    totalBalance,
+    dashboardSummary,
+    freePlanStatus,
+    ...actions,
+  };
 }

@@ -2,12 +2,13 @@ import React from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useApp } from "@/lib/context";
+import { useAuth, useNetwork } from "@/lib/context";
 import Colors from "@/constants/colors";
 
 export function OfflineBanner() {
   const insets = useSafeAreaInsets();
-  const { isOnline, isAuthenticated } = useApp();
+  const { isOnline } = useNetwork();
+  const { isAuthenticated } = useAuth();
 
   if (isOnline || !isAuthenticated) return null;
 

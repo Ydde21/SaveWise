@@ -17,15 +17,17 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
-import { useApp } from "@/lib/context";
+import { useActions, useNetwork, usePreferences, useWallets } from "@/lib/context";
 import { formatFullCurrency } from "@/lib/interest";
 import { WALLET_COLORS, WALLET_ICONS } from "@/lib/storage";
 import Colors from "@/constants/colors";
 
 export default function WalletsScreen() {
   const insets = useSafeAreaInsets();
-  const { wallets, currencySymbol, addWallet, removeWallet, isOnline } =
-    useApp();
+  const wallets = useWallets();
+  const { currencySymbol } = usePreferences();
+  const { addWallet, removeWallet } = useActions();
+  const { isOnline } = useNetwork();
   const [showCreate, setShowCreate] = useState(false);
   const [name, setName] = useState("");
   const [balance, setBalance] = useState("");
