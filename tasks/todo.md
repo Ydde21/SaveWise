@@ -483,3 +483,21 @@
 - `npm test -- tests/load-guards.test.ts` passed.
 - `npx tsc --noEmit` passed.
 - `npm run lint` passed.
+
+
+## Current PR Follow-up - Scoped Table Load Guards
+
+- [x] Reproduce/analyze overlap between realtime table refreshes and shared load guard invalidation.
+- [x] Scope refresh load guards by table so concurrent table refreshes do not cancel each other.
+- [x] Preserve stale-session protection so old-user async results are still ignored.
+- [x] Add/update guard tests for per-table concurrency behavior.
+- [x] Verify with focused tests and static checks.
+
+## Current PR Follow-up Review
+
+- [x] Confirm concurrent `transactions` + `wallets` refreshes can both commit when for the same user.
+- [x] Confirm guard still blocks stale writes after user/session change.
+- Scoped guard ids are now isolated per table so overlapping realtime refreshes no longer cancel each other.
+- `npm test -- tests/load-guards.test.ts` passed (6 tests).
+- `npx tsc --noEmit` passed.
+- `npm run lint` passed.
