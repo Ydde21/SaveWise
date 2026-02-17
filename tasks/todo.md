@@ -454,3 +454,32 @@
 - iOS update ID: `019c6bde-31a1-7e70-974e-8e1e0eb9c52a`.
 - `npx eas channel:view production` confirms latest message `"fix: keyboard root provider + android resize mode"` on branch `production`.
 - Manual device QA remains required from app runtime context for Android/iOS keyboard-obstruction confirmation.
+
+## Current Request - Session Guard for Remote Loads
+
+- [ ] Audit `AppProvider` async remote load/refresh paths for stale writes after auth changes.
+- [ ] Add request-version/user-id guards to prevent outdated async results from calling `setState`.
+- [ ] Apply the same guard in realtime-triggered refresh flow (`scheduleTableRefresh` -> `refreshTable`).
+- [ ] Add regression tests for rapid sign-out/sign-in transitions.
+- [ ] Verify with focused tests and static checks.
+
+## Current Request Review (Pending)
+
+- [ ] Confirm stale old-user responses are ignored after session change.
+- [ ] Confirm realtime refreshes cannot repopulate state post-logout.
+
+## Current Request - Session Guard for Remote Loads (Completed)
+
+- [x] Audit `AppProvider` async remote load/refresh paths for stale writes after auth changes.
+- [x] Add request-version/user-id guards to prevent outdated async results from calling `setState`.
+- [x] Apply the same guard in realtime-triggered refresh flow (`scheduleTableRefresh` -> `refreshTable`).
+- [x] Add regression tests for rapid sign-out/sign-in transitions.
+- [x] Verify with focused tests and static checks.
+
+## Current Request Review
+
+- [x] Confirm stale old-user responses are ignored after session change.
+- [x] Confirm realtime refreshes cannot repopulate state post-logout.
+- `npm test -- tests/load-guards.test.ts` passed.
+- `npx tsc --noEmit` passed.
+- `npm run lint` passed.
