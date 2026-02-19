@@ -12,7 +12,6 @@ build/
 *.log
 .env
 .env.*
-!.env.example
 credentials.json
 credentials/*.jks
 credentials/keystore-info.txt
