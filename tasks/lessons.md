@@ -18,3 +18,4 @@
 - For keyboard-related form fixes, never mark complete from code review alone; validate on Android device/emulator and ensure every `TextInput` form uses the shared keyboard-aware scroll wrapper with explicit offsets before publishing OTA.
 - When using `react-native-keyboard-controller` keyboard-aware forms, always verify root-level `KeyboardProvider` is present and set `android.softwareKeyboardLayoutMode` explicitly, otherwise form-level wrappers can silently degrade on Android.
 - When editing files in this environment, prefer the dedicated patch/edit workflow and avoid routing `apply_patch` through generic shell execution to prevent tooling warnings.
+- After splitting context providers, do not import `useApp()` in `app/**` or `components/**`; use focused hooks and enforce it with lint to prevent broad rerender subscriptions from returning.

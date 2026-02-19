@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -13,45 +13,58 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Link, router } from "expo-router";
 import Colors from "@/constants/colors";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
-import { useApp } from "@/lib/context";
+import { useActions, useNetwork } from "@/lib/context";
 
 export default function SignUpScreen() {
   const insets = useSafeAreaInsets();
-  const { signUp, isOnline } = useApp();
+  const { signUp } = useActions();
+  const { isOnline } = useNetwork();
   const formKeyboardBottomOffset = insets.bottom + 24;
   const formKeyboardExtraSpace = 12;
+  const isMountedRef = useRef(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   const handleSubmit = async () => {
-    setError("");
+    if (isMountedRef.current) setError("");
 
     if (!email.trim() || !password.trim()) {
-      setError("Email and password are required.");
+      if (isMountedRef.current) setError("Email and password are required.");
       return;
     }
 
     if (password.length < 6) {
-      setError("Password must be at least 6 characters.");
+      if (isMountedRef.current) setError("Password must be at least 6 characters.");
       return;
     }
 
     if (password !== confirmPassword) {
-      setError("Passwords do not match.");
+      if (isMountedRef.current) setError("Passwords do not match.");
       return;
     }
 
     try {
       setLoading(true);
       await signUp(email.trim(), password);
-      router.replace("/(auth)/sign-in");
+      if (isMountedRef.current) {
+        router.replace("/(auth)/sign-in");
+      }
     } catch (err) {
+      if (!isMountedRef.current) return;
       setError(err instanceof Error ? err.message : "Unable to create account.");
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   };
 

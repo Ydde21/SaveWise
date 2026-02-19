@@ -12,7 +12,17 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import Colors from "@/constants/colors";
-import { useApp } from "@/lib/context";
+import {
+  useExpenses,
+  useFinanceMetrics,
+  useGoals,
+  useIncomes,
+  useLoanPayments,
+  useLoans,
+  usePreferences,
+  useSubscriptionState,
+  useWallets,
+} from "@/lib/context";
 import {
   calculateMonthlyPayment,
   formatFullCurrency,
@@ -156,17 +166,15 @@ export default function ReportsScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const [range, setRange] = useState<ReportRangeKey>("3M");
-  const {
-    isPremium,
-    wallets,
-    incomes,
-    expenses,
-    loans,
-    loanPayments,
-    goals,
-    dashboardSummary,
-    currencySymbol,
-  } = useApp();
+  const { isPremium } = useSubscriptionState();
+  const wallets = useWallets();
+  const incomes = useIncomes();
+  const expenses = useExpenses();
+  const loans = useLoans();
+  const loanPayments = useLoanPayments();
+  const goals = useGoals();
+  const { dashboardSummary } = useFinanceMetrics();
+  const { currencySymbol } = usePreferences();
   const webTopInset = Platform.OS === "web" ? 67 : 0;
 
   const reportSnapshot = useMemo(

@@ -36,6 +36,11 @@ const config: ExpoConfig = {
       backgroundColor: "#F7F8FA",
     },
   },
+  androidStatusBar: {
+    barStyle: "dark-content",
+    backgroundColor: "#F7F8FA",
+    translucent: true,
+  },
   web: {
     bundler: "metro",
     favicon: "./assets/images/favicon.png",

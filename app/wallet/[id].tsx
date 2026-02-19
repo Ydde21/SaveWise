@@ -18,7 +18,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, router } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
-import { useApp } from "@/lib/context";
+import {
+  useActions,
+  useNetwork,
+  usePreferences,
+  useTransactions,
+  useWallets,
+} from "@/lib/context";
 import {
   formatFullCurrency,
   generateProjectionData,
@@ -31,14 +37,11 @@ export default function WalletDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
   const { width: screenWidth } = useWindowDimensions();
-  const {
-    wallets,
-    transactions,
-    currencySymbol,
-    addTransaction,
-    removeTransaction,
-    isOnline,
-  } = useApp();
+  const wallets = useWallets();
+  const transactions = useTransactions();
+  const { currencySymbol } = usePreferences();
+  const { addTransaction, removeTransaction } = useActions();
+  const { isOnline } = useNetwork();
   const wallet = wallets.find((w) => w.id === id);
   const [showAddTransaction, setShowAddTransaction] = useState(false);
   const [txType, setTxType] = useState<"deposit" | "withdrawal">("deposit");

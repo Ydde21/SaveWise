@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -13,31 +13,42 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Link } from "expo-router";
 import Colors from "@/constants/colors";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
-import { useApp } from "@/lib/context";
+import { useActions, useNetwork } from "@/lib/context";
 
 export default function SignInScreen() {
   const insets = useSafeAreaInsets();
-  const { signIn, isOnline } = useApp();
+  const { signIn } = useActions();
+  const { isOnline } = useNetwork();
   const formKeyboardBottomOffset = insets.bottom + 24;
   const formKeyboardExtraSpace = 12;
+  const isMountedRef = useRef(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   const handleSubmit = async () => {
-    setError("");
+    if (isMountedRef.current) setError("");
     if (!email.trim() || !password.trim()) {
-      setError("Email and password are required.");
+      if (isMountedRef.current) setError("Email and password are required.");
       return;
     }
     try {
       setLoading(true);
       await signIn(email.trim(), password);
     } catch (err) {
+      if (!isMountedRef.current) return;
       setError(err instanceof Error ? err.message : "Unable to sign in.");
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   };
 

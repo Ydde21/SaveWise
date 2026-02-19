@@ -1654,6 +1654,8 @@ export function useExpensesSelector<T>(selector: (expenses: Expense[]) => T): T 
   return selector(useExpenses());
 }
 
+// Legacy aggregate hook kept for compatibility.
+// Prefer focused hooks in UI code to avoid broad subscriptions and unnecessary rerenders.
 export function useApp(): AppContextValue {
   const auth = useAuth();
   const network = useNetwork();

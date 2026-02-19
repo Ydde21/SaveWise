@@ -17,7 +17,7 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
 } from "react-native-reanimated";
-import { useApp } from "@/lib/context";
+import { useActions } from "@/lib/context";
 import Colors from "@/constants/colors";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -64,7 +64,7 @@ function OnboardingPage({
 
 export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
-  const { completeOnboarding } = useApp();
+  const { completeOnboarding } = useActions();
   const [currentIndex, setCurrentIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
   const buttonScale = useSharedValue(1);

@@ -505,3 +505,45 @@
 - `npx tsc --noEmit` passed.
 - `npm run lint` passed.
 
+## Current Request - Performance Cleanup Refactor (High-Impact, Zero-Risk)
+
+- [x] Add task-tracking section and review placeholder for this request.
+- [x] Replace remaining `useApp()` usage in targeted app screens with focused hooks.
+- [x] Add auth submit unmount guards to prevent post-unmount state writes.
+- [x] Add lint guardrail to block `useApp` imports in `app/**` and `components/**`.
+- [x] Add context hygiene note documenting `useApp` as legacy aggregate hook.
+- [x] Run verification (`npx tsc --noEmit`, `npm run lint`, `npm test`).
+- [x] Document root cause, refactor scope, and verification evidence.
+
+## Current Request - Performance Cleanup Refactor Review
+
+- [x] Confirm no app screens use `useApp()` broad subscriptions after refactor.
+- [ ] Confirm auth submit flows do not trigger post-unmount state update warnings.
+- [ ] Confirm reports/wallet detail behavior remains unchanged after hook-slice migration.
+- [ ] Confirm realtime refresh behavior remains single-path without duplicate listener churn.
+- Root cause: `useApp()` was still imported by `app/reports.tsx`, `app/wallet/[id].tsx`, `app/(auth)/sign-in.tsx`, `app/(auth)/sign-up.tsx`, and `app/onboarding.tsx`, creating broad subscriptions; auth submit flows also had potential post-unmount `setState` risk in `finally` paths.
+- Refactor scope:
+  `app/reports.tsx`, `app/wallet/[id].tsx`, `app/(auth)/sign-in.tsx`, `app/(auth)/sign-up.tsx`, `app/onboarding.tsx`, `eslint.config.js`, `lib/context.tsx`, `tasks/lessons.md`.
+- `rg -n "useApp\\(" app components` now returns no matches.
+- Lint guardrail added: `no-restricted-imports` blocks `useApp` import from `@/lib/context` in `app/**` and `components/**`.
+- `npx tsc --noEmit` passed.
+- `npm run lint` passed.
+- `npm test` passed (34 tests).
+- Manual runtime checks still required from device/emulator context for auth unmount warning absence and behavior parity in Reports/Wallet detail/realtime refresh.
+
+## Current Request - Status Bar Visibility
+
+- [x] Diagnose why status bar text/icons are unreadable on light dashboard.
+- [x] Set global status bar style to dark content in root layout.
+- [x] Add Android status bar defaults in Expo config.
+- [x] Verify with `npx tsc --noEmit` and manual dashboard check on Android.
+
+## Current Request - Status Bar Visibility Review
+
+- [x] Confirm status bar time/icons are readable on Android dashboard and other tabs.
+- `npx tsc --noEmit` passed.
+- Added a global root `StatusBar` (`style="dark"`) and explicit `androidStatusBar` config (`barStyle: "dark-content"`, light background) to prevent light-on-light status text.
+- `CI=1 npx eas update --channel production --message "fix: status bar visibility"` passed.
+- Published update group: `d1c76a3d-1df5-4096-b953-bc034ce055e6` (runtime `1.0.0`, platforms `android, ios`).
+- `npx eas channel:view production` confirms latest message `"fix: status bar visibility"` on branch `production`.
+- Manual QA confirmation: status bar visibility is fixed after OTA.

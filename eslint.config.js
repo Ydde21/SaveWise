@@ -24,4 +24,22 @@ module.exports = [
       "no-unused-vars": "off",
     },
   },
+  {
+    files: ["app/**/*.{ts,tsx,js,jsx}", "components/**/*.{ts,tsx,js,jsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@/lib/context",
+              importNames: ["useApp"],
+              message:
+                "Use focused context hooks (useAuth/useNetwork/usePreferences/useActions/etc.) instead of useApp.",
+            },
+          ],
+        },
+      ],
+    },
+  },
 ];
